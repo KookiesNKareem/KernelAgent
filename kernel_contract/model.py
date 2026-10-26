@@ -160,6 +160,36 @@ class Installed:
     spec: OpSpec
     kernel: object
     strided_ok: bool
+    pinned: frozenset = frozenset()  # size symbols whose perturbations failed: only the observed value is admitted
+
+
+def envelope(spec: OpSpec, results: list[dict]) -> dict | None:
+    """What a kernel may be deployed for, given its contract results. None if any failure is on the
+    observed call, a reseed or a value transform: those inputs cannot be excluded by a guard."""
+    failed = [r for r in results if r["outcome"] in ("wrong", "crash", "refuse")]
+    if any(r["axis"] in ("seed", "values") for r in failed):
+        return None
+    pinned = {r["name"].split("=")[0] for r in failed if r["axis"] == "sizes"}
+    return {"strided_ok": not any(r["axis"] == "layout" for r in failed), "pinned": sorted(pinned)}
+
+
+def _pins_hold(inst: "Installed", args, kwargs) -> bool:
+    if not inst.pinned:
+        return True
+    sizes = inst.spec.sizes
+
+    def walk(desc, actual) -> bool:
+        if isinstance(desc, dict) and "tensor" in desc:
+            return all(not (isinstance(d, dict) and d["sym"] in inst.pinned) or actual.shape[i] == sizes[d["sym"]]
+                       for i, d in enumerate(desc["tensor"]["shape"]))
+        if isinstance(desc, dict) and "sym" in desc:
+            return desc["sym"] not in inst.pinned or actual == sizes[desc["sym"]]
+        if isinstance(desc, dict) and "seq" in desc:
+            return all(walk(d, x) for d, x in zip(desc["seq"], actual))
+        return True
+
+    return all(walk(d, x) for d, x in zip(inst.spec.args, args)) and all(
+        walk(inst.spec.kwargs[k], v) for k, v in kwargs.items() if k in inst.spec.kwargs)
 
 
 @dataclass
@@ -225,6 +255,10 @@ class GuardedModel(TorchFunctionMode):
         if not inst.strided_ok and not all(a.is_contiguous() for a in args if isinstance(a, torch.Tensor)):
             self.stats.fallback[path] += 1
             self.stats.reasons["non-contiguous input, kernel verified dense only"] += 1
+            return None
+        if not _pins_hold(inst, args, kwargs):
+            self.stats.fallback[path] += 1
+            self.stats.reasons["size outside verified values"] += 1
             return None
         self.stats.routed[path] += 1
         return inst.kernel(*args, **kwargs)

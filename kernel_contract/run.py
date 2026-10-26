@@ -17,8 +17,7 @@ from pathlib import Path
 import torch
 
 from .agent import solve
-from .model import Installed, compare_model, load_kernel, trace
-from .runner import run_contract
+from .model import Installed, compare_model, envelope, load_kernel, trace
 
 
 class Log:
@@ -67,17 +66,12 @@ def main():
             continue
         path = a.out / "kernels" / f"{site.spec.name}_final.py"
         path.write_text(final.source)
-        if final.verdict.outcome == "accept":
-            installed.append(Installed(site.spec, load_kernel(path), strided_ok=True))
-            log({"event": "install", "op": site.spec.name, "contract": "strided"})
-            continue
-        # a kernel that only refuses strided views is still safe behind the guard if it passes the dense contract
-        dense = run_contract(site.spec, path, contract="dense", device=a.device)
-        if dense.outcome == "accept":
-            installed.append(Installed(site.spec, load_kernel(path), strided_ok=False))
-            log({"event": "install", "op": site.spec.name, "contract": "dense"})
-        else:
+        env = envelope(site.spec, final.verdict.results)
+        if env is None:
             log({"event": "reject", "op": site.spec.name, "outcome": final.verdict.outcome})
+            continue
+        installed.append(Installed(site.spec, load_kernel(path), env["strided_ok"], frozenset(env["pinned"])))
+        log({"event": "install", "op": site.spec.name, **env})
     report = compare_model(model, inputs, installed)
     log({"event": "model_compare", **report})
     (a.out / "report.json").write_text(json.dumps(report, indent=1))

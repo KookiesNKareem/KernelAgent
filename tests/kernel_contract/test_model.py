@@ -32,3 +32,26 @@ def test_trace_and_guard():
     assert r["routed"] == {"torch.Tensor.softmax": 1}
     assert r["fallback"] == {"torch.Tensor.softmax": 1}
     assert r["max_abs_diff"] < 1e-5
+
+
+def test_envelope_pins_failed_sizes_and_layouts():
+    from kernel_contract.model import envelope
+    res = [{"name": "observed", "axis": "seed", "outcome": "accept"},
+           {"name": "s2=65", "axis": "sizes", "outcome": "wrong"},
+           {"name": "strided2", "axis": "layout", "outcome": "refuse"}]
+    assert envelope(None, res) == {"strided_ok": False, "pinned": ["s2"]}
+    assert envelope(None, res + [{"name": "shift", "axis": "values", "outcome": "wrong"}]) is None
+
+
+def test_pinned_size_falls_back():
+    from kernel_contract.spec import capture
+    m = Tiny().eval()
+    x = torch.randn(8, 16)
+    site = next(s for s in trace(m, (x,), device="cpu") if s.spec.op == "torch.Tensor.softmax"
+                and s.spec.args[0]["tensor"]["contiguous"])
+    inst = Installed(site.spec, load_kernel(K / "good_softmax.py"), strided_ok=True, pinned=frozenset(site.spec.sizes))
+    with GuardedModel([inst]) as g:
+        torch.randn(8, 32).softmax(-1)
+        torch.randn(8, 33).softmax(-1)
+    assert g.stats.routed["torch.Tensor.softmax"] == 1
+    assert g.stats.reasons["size outside verified values"] == 1

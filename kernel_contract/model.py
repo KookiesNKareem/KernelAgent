@@ -4,6 +4,7 @@ to PyTorch."""
 
 from __future__ import annotations
 
+import functools
 import importlib.util
 import json
 import time
@@ -39,25 +40,66 @@ def op_path(func) -> str | None:
     return f"{mod}.{name}" if mod else None
 
 
+_ACTIVE: list = []
+
+
+def kernel_site(fn):
+    """Mark a plain-PyTorch helper (RMSNorm, rotary embedding, SwiGLU) as one replaceable op.
+    Its inner torch calls are not recorded separately, so a written kernel can fuse them."""
+    path = f"{fn.__module__}.{fn.__qualname__}"
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        mode = _ACTIVE[-1] if _ACTIVE else None
+        if mode is None:
+            return fn(*args, **kwargs)
+        return mode.site_call(path, fn, args, kwargs)
+
+    wrapper.kernel_site_path = path
+    return wrapper
+
+
 class _Recorder(TorchFunctionMode):
     def __init__(self):
         super().__init__()
         self.calls: Counter = Counter()
         self.specs: dict[str, OpSpec] = {}
+        self.suspended = 0
+
+    def __enter__(self):
+        _ACTIVE.append(self)
+        return super().__enter__()
+
+    def __exit__(self, *exc):
+        _ACTIVE.pop()
+        return super().__exit__(*exc)
+
+    def _record(self, path, args, kwargs):
+        try:
+            spec = capture(path, tuple(args), kwargs)
+        except TypeError:
+            return
+        key = json.dumps(spec.to_json(), sort_keys=True)
+        self.calls[key] += 1
+        self.specs.setdefault(key, spec)
+
+    def site_call(self, path, fn, args, kwargs):
+        self._record(path, args, kwargs)
+        self.suspended += 1
+        try:
+            return fn(*args, **kwargs)
+        finally:
+            self.suspended -= 1
 
     def __torch_function__(self, func, types, args=(), kwargs=None):
         kwargs = kwargs or {}
         out = func(*args, **kwargs)
+        if self.suspended:
+            return out
         name = getattr(func, "__name__", "")
         path = op_path(func)
         if path and name not in SKIP and isinstance(out, torch.Tensor) and out.is_floating_point():
-            try:
-                spec = capture(path, tuple(args), kwargs)
-            except TypeError:
-                return out
-            key = json.dumps(spec.to_json(), sort_keys=True)
-            self.calls[key] += 1
-            self.specs.setdefault(key, spec)
+            self._record(path, args, kwargs)
         return out
 
 
@@ -155,25 +197,45 @@ class GuardedModel(TorchFunctionMode):
         self.ops = {inst.spec.op for inst in installed}
         self.stats = GuardStats()
 
+    def __enter__(self):
+        _ACTIVE.append(self)
+        return super().__enter__()
+
+    def __exit__(self, *exc):
+        _ACTIVE.pop()
+        return super().__exit__(*exc)
+
+    def site_call(self, path, fn, args, kwargs):
+        if path in self.ops:
+            routed = self._route(path, args, kwargs)
+            if routed is not None:
+                return routed
+        return fn(*args, **kwargs)
+
+    def _route(self, path, args, kwargs):
+        try:
+            spec = capture(path, tuple(args), kwargs)
+        except TypeError:
+            spec = None
+        inst = self.table.get(_signature(spec.to_json())) if spec else None
+        if inst is None:
+            self.stats.fallback[path] += 1
+            self.stats.reasons["signature outside contract"] += 1
+            return None
+        if not inst.strided_ok and not all(a.is_contiguous() for a in args if isinstance(a, torch.Tensor)):
+            self.stats.fallback[path] += 1
+            self.stats.reasons["non-contiguous input, kernel verified dense only"] += 1
+            return None
+        self.stats.routed[path] += 1
+        return inst.kernel(*args, **kwargs)
+
     def __torch_function__(self, func, types, args=(), kwargs=None):
         kwargs = kwargs or {}
         path = op_path(func)
         if path in self.ops:
-            try:
-                spec = capture(path, tuple(args), kwargs)
-            except TypeError:
-                spec = None
-            inst = self.table.get(_signature(spec.to_json())) if spec else None
-            if inst is None:
-                self.stats.fallback[path] += 1
-                self.stats.reasons["signature outside contract"] += 1
-            elif not inst.strided_ok and not all(
-                    a.is_contiguous() for a in args if isinstance(a, torch.Tensor)):
-                self.stats.fallback[path] += 1
-                self.stats.reasons["non-contiguous input, kernel verified dense only"] += 1
-            else:
-                self.stats.routed[path] += 1
-                return inst.kernel(*args, **kwargs)
+            routed = self._route(path, args, kwargs)
+            if routed is not None:
+                return routed
         return func(*args, **kwargs)
 
 

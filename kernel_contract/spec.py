@@ -55,8 +55,8 @@ class OpSpec:
 
 
 def _tensor_desc(t: torch.Tensor) -> dict:
-    return {"tensor": {"shape": list(t.shape), "dtype": dtype_name(t.dtype), "stride": list(t.stride()),
-                       "contiguous": t.is_contiguous()}}
+    return {"tensor": {"shape": list(t.shape), "obs_shape": list(t.shape), "dtype": dtype_name(t.dtype),
+                       "stride": list(t.stride()), "contiguous": t.is_contiguous()}}
 
 
 def _flat(xs):
@@ -127,7 +127,8 @@ def materialize(spec: OpSpec, sizes: dict[str, int], seed: int, device: str,
                 x = torch.randint(0, max(2, min(shape) if shape else 2), shape, generator=g, dtype=dt)
             x = x.to(device)
             mode = layout if layout is not None else ("observed" if not t.get("contiguous", True) else None)
-            return apply_layout(x, mode, t.get("stride"))
+            exact = t.get("stride") if shape == t.get("obs_shape") else None
+            return apply_layout(x, mode, t.get("stride"), exact)
         if isinstance(a, dict) and "sym" in a:
             return sizes[a["sym"]]
         if isinstance(a, dict) and "seq" in a:
@@ -140,7 +141,8 @@ def materialize(spec: OpSpec, sizes: dict[str, int], seed: int, device: str,
     return [dec(a) for a in spec.args], {k: dec(v) for k, v in spec.kwargs.items()}
 
 
-def apply_layout(x: torch.Tensor, mode: str | None, observed_stride: list[int] | None = None) -> torch.Tensor:
+def apply_layout(x: torch.Tensor, mode: str | None, observed_stride: list[int] | None = None,
+                 exact_stride: list[int] | None = None) -> torch.Tensor:
     """Same logical values, different memory layout."""
     if mode is None or x.dim() == 0:
         return x
@@ -149,6 +151,13 @@ def apply_layout(x: torch.Tensor, mode: str | None, observed_stride: list[int] |
     if mode == "observed":
         if observed_stride is None or list(x.stride()) == observed_stride:
             return x
+        if exact_stride is not None and all(st >= 0 for st in exact_stride):
+            # the model's exact strides, gaps included, inside a buffer just large enough
+            span = sum((n - 1) * st for n, st in zip(x.shape, exact_stride)) + 1
+            buf = torch.zeros(span, dtype=x.dtype, device=x.device)
+            view = torch.as_strided(buf, x.shape, exact_stride)
+            view.copy_(x)
+            return view
         order = sorted(range(x.dim()), key=lambda i: -observed_stride[i])
         y = x.permute(order).contiguous()
         inv = [order.index(i) for i in range(x.dim())]

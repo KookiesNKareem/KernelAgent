@@ -74,7 +74,15 @@ def main():
     model, tok = load(a.model_id)
     print(json.dumps({"load_s": time.time() - t0, "mem_gb": torch.cuda.memory_allocated() / 1e9}), flush=True)
     if a.compiled:
-        print(json.dumps(compiled_decode_speed(model, tok)), flush=True)
+        import traceback
+        for mode in ("reduce-overhead", "default"):
+            try:
+                print(json.dumps(compiled_decode_speed(model, tok, mode=mode)), flush=True)
+            except Exception as e:
+                print(json.dumps({"compile_mode": mode, "error": f"{type(e).__name__}: {e}"[:1500]}), flush=True)
+                traceback.print_exc(limit=3)
+            model.forward = model.__class__.forward.__get__(model)
+            torch._dynamo.reset()
         return
     print(json.dumps(decode_speed(model, tok)), flush=True)
 

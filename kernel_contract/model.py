@@ -142,7 +142,7 @@ def trace(model: torch.nn.Module, inputs: tuple, device: str = "cuda") -> list[O
         args, kwargs = materialize(spec, spec.sizes, 0, device)
         fn = spec.reference()
         try:
-            ms = _time(lambda: fn(*args, **kwargs))
+            ms = sorted(_time(lambda: fn(*args, **kwargs)) for _ in range(5))[2]
         except Exception:
             continue
         spec.name = f"{spec.op.rsplit('.', 1)[-1]}_{len(sites)}"

@@ -17,14 +17,17 @@ import argparse
 import json
 from pathlib import Path
 
-from mcp.server.fastmcp import FastMCP
+try:
+    from mcp.server.mcpserver import MCPServer
+except ImportError:  # mcp < 2
+    from mcp.server.fastmcp import FastMCP as MCPServer
 
 from .agent import describe_call, describe_case
 from .model import Installed, compare_model, envelope, load_kernel, trace
 from .run import load_model
 from .runner import run_contract
 
-mcp = FastMCP("kernel-contract")
+mcp = MCPServer("kernel-contract")
 STATE: dict = {"model": None, "inputs": None, "sites": {}, "verdicts": {}, "device": "cuda"}
 
 

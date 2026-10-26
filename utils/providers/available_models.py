@@ -18,10 +18,26 @@ from utils.providers.model_config import ModelConfig
 from utils.providers.openai_provider import OpenAIProvider
 from utils.providers.anthropic_provider import AnthropicProvider
 from utils.providers.relay_provider import RelayProvider
+from utils.providers.meta_provider import MetaProvider, BasetenProvider
 
 
 # Registry of all available models (external/OSS version)
 AVAILABLE_MODELS = [
+    ModelConfig(
+        name="muse-spark-1.2",
+        provider_classes=[MetaProvider],
+        description="Meta Muse Spark 1.2 over the Meta Model API",
+    ),
+    ModelConfig(
+        name="muse-spark-1.1",
+        provider_classes=[MetaProvider],
+        description="Meta Muse Spark 1.1 over the Meta Model API",
+    ),
+    ModelConfig(
+        name="meta-models/muse-spark-open-1026",
+        provider_classes=[BasetenProvider],
+        description="Meta Muse Spark Open (open weights) served by Baseten",
+    ),
     ModelConfig(
         name="o4-mini",
         provider_classes=[OpenAIProvider],

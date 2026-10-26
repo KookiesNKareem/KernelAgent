@@ -47,14 +47,6 @@ def to_f64(x):
     return x
 
 
-def clone(x):
-    if isinstance(x, torch.Tensor):
-        return x.clone() if x.is_contiguous() else x.detach().clone(memory_format=torch.preserve_format)
-    if isinstance(x, (list, tuple)):
-        return type(x)(clone(v) for v in x)
-    return x
-
-
 def compare(out: torch.Tensor, ref: torch.Tensor, truth: torch.Tensor) -> dict:
     if tuple(out.shape) != tuple(ref.shape):
         return {"outcome": "wrong", "reason": f"shape {tuple(out.shape)} != {tuple(ref.shape)}"}
@@ -80,19 +72,26 @@ def compare(out: torch.Tensor, ref: torch.Tensor, truth: torch.Tensor) -> dict:
 def run_case(spec: OpSpec, kernel, case: dict, device: str) -> dict:
     sizes = {**spec.sizes, **case.get("sizes", {})}
     vf = VALUE_TRANSFORMS.get(case.get("transform", ""))
-    args, kwargs = materialize(spec, sizes, case["seed"], device, layout=case.get("layout"), value_fn=vf)
+
+    def fresh():
+        # rebuilt from the seed for every call: a clone would not keep a gapped view's strides
+        return materialize(spec, sizes, case["seed"], device, layout=case.get("layout"), value_fn=vf)
+
+    args, kwargs = fresh()
     fn = spec.reference()
     try:
-        ref = first_tensor(fn(*clone(args), **clone(kwargs)))
+        ref = first_tensor(fn(*args, **kwargs))
     except Exception as e:
         return {"outcome": "skip", "reason": f"reference raised {type(e).__name__}: {e}"[:300]}
+    args, kwargs = fresh()
     try:
         truth = first_tensor(fn(*to_f64(args), **to_f64(kwargs)))
     except Exception:
         truth = first_tensor(fn(*[a.float() if isinstance(a, torch.Tensor) and a.is_floating_point() else a
                                   for a in args], **kwargs))
     try:
-        out = first_tensor(kernel(*clone(args), **clone(kwargs)))
+        kargs, kkwargs = fresh()
+        out = first_tensor(kernel(*kargs, **kkwargs))
         if device.startswith("cuda"):
             torch.cuda.synchronize()
     except Exception as e:

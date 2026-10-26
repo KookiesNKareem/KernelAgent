@@ -23,9 +23,16 @@ def dtype_name(dt: torch.dtype) -> str:
 
 
 def resolve(path: str):
-    mod, _, attr = path.rpartition(".")
-    obj = importlib.import_module(mod)
-    return getattr(obj, attr)
+    parts = path.split(".")
+    for i in range(len(parts) - 1, 0, -1):
+        try:
+            obj = importlib.import_module(".".join(parts[:i]))
+        except ImportError:
+            continue
+        for attr in parts[i:]:
+            obj = getattr(obj, attr)
+        return obj
+    raise ImportError(path)
 
 
 @dataclass

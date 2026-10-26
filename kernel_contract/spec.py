@@ -42,13 +42,15 @@ class OpSpec:
     kwargs: dict[str, Any] = field(default_factory=dict)
     sizes: dict[str, int] = field(default_factory=dict)
     name: str = ""
+    flags: dict[str, Any] = field(default_factory=dict)
 
     def to_json(self) -> dict:
-        return {"op": self.op, "args": self.args, "kwargs": self.kwargs, "sizes": self.sizes, "name": self.name}
+        return {"op": self.op, "args": self.args, "kwargs": self.kwargs, "sizes": self.sizes, "name": self.name,
+                "flags": self.flags}
 
     @classmethod
     def from_json(cls, d: dict) -> "OpSpec":
-        return cls(d["op"], d["args"], d.get("kwargs", {}), d.get("sizes", {}), d.get("name", ""))
+        return cls(d["op"], d["args"], d.get("kwargs", {}), d.get("sizes", {}), d.get("name", ""), d.get("flags", {}))
 
     def reference(self):
         return resolve(self.op)

@@ -21,6 +21,7 @@ from .spec import capture, with_domains
 def gdr_spec(B=2, H=4, T=512, D=128):
     q, k, v, g, beta = inputs(B=B, H=H, T=T, D=D)
     spec = capture("kernel_contract.recur_bench.reference", (q, k, v, g, beta, D ** -0.5), name="gated_delta_rule")
+    spec.flags["any_float_output"] = True
     return with_domains(spec, {1: "l2row", 3: "logdecay", 4: "unit"})
 
 

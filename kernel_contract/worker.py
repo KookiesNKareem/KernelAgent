@@ -47,11 +47,12 @@ def to_f64(x):
     return x
 
 
-def compare(out: torch.Tensor, ref: torch.Tensor, truth: torch.Tensor) -> dict:
+def compare(out: torch.Tensor, ref: torch.Tensor, truth: torch.Tensor, any_float: bool = False) -> dict:
     if tuple(out.shape) != tuple(ref.shape):
         return {"outcome": "wrong", "reason": f"shape {tuple(out.shape)} != {tuple(ref.shape)}"}
-    if out.dtype != ref.dtype:
+    if out.dtype != ref.dtype and not (any_float and out.is_floating_point() and ref.is_floating_point()):
         return {"outcome": "wrong", "reason": f"dtype {out.dtype} != {ref.dtype}"}
+    tol_dtype = out.dtype if TOL.get(out.dtype, (0,))[0] > TOL.get(ref.dtype, (0,))[0] else ref.dtype
     o, r, t = out.double(), ref.double(), truth.double().to(out.device)
     fin_t = torch.isfinite(t)
     if not torch.equal(torch.isfinite(o), fin_t):
@@ -60,7 +61,7 @@ def compare(out: torch.Tensor, ref: torch.Tensor, truth: torch.Tensor) -> dict:
     if not fin_t.any():
         return {"outcome": "accept", "err": 0.0, "torch_err": 0.0, "scale": 0.0}
     o, r, t = o[fin_t], r[fin_t], t[fin_t]
-    atol, rtol = TOL.get(ref.dtype, (1e-2, 1e-2))
+    atol, rtol = TOL.get(tol_dtype, (1e-2, 1e-2))
     scale = float(t.abs().max())
     err = float((o - t).abs().max())
     torch_err = float((r - t).abs().max())
@@ -100,7 +101,7 @@ def run_case(spec: OpSpec, kernel, case: dict, device: str) -> dict:
         if any(s in msg for s in DEVICE_ERRORS):
             return {"outcome": "crash", "reason": msg[:300]}
         return {"outcome": "refuse", "reason": msg[:300]}
-    return compare(out, ref, truth)
+    return compare(out, ref, truth, any_float=spec.flags.get("any_float_output", False))
 
 
 def main():

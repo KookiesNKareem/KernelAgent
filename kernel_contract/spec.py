@@ -103,8 +103,40 @@ def capture(op: str, args: tuple, kwargs: dict | None = None, name: str = "") ->
     return OpSpec(op, encoded_args, encoded_kwargs, sizes, name or op.rsplit(".", 1)[-1])
 
 
+DOMAINS = ("logdecay", "unit", "l2row", "positive")
+
+
+def draw_domain(dom: str, shape: list[int], g: torch.Generator, stress: str | None) -> torch.Tensor:
+    """Inputs a layer defines only on a constrained set. Value transforms never touch these;
+    stress cases push them to the edges of their domain instead."""
+    u = torch.rand(shape, generator=g, dtype=torch.float32)
+    if dom == "logdecay":  # log of a decay factor in (0, 1]
+        if stress == "decay_none":
+            return torch.zeros(shape)
+        if stress == "decay_strong":
+            return -20 * u - 5
+        return torch.nn.functional.logsigmoid(torch.randn(shape, generator=g))
+    if dom == "unit":  # a gate in (0, 1)
+        if stress == "gate_edges":
+            return torch.where(u > 0.5, 1 - 1e-4 * u, 1e-4 * u)
+        return u.clamp(1e-3, 1 - 1e-3)
+    if dom == "l2row":  # rows of unit L2 norm along the last dim
+        return torch.nn.functional.normalize(torch.randn(shape, generator=g), dim=-1)
+    if dom == "positive":
+        return u * 2 + 1e-3
+    raise ValueError(f"unknown domain {dom}")
+
+
+def with_domains(spec: "OpSpec", domains: dict[int, str]) -> "OpSpec":
+    """Mark positional tensor arguments with value domains."""
+    for i, dom in domains.items():
+        assert dom in DOMAINS, dom
+        spec.args[i]["tensor"]["domain"] = dom
+    return spec
+
+
 def materialize(spec: OpSpec, sizes: dict[str, int], seed: int, device: str,
-                layout: str | None = None, value_fn=None) -> tuple[list, dict]:
+                layout: str | None = None, value_fn=None, stress: str | None = None) -> tuple[list, dict]:
     """Build concrete arguments. `layout` overrides the observed strides of every tensor of rank >= 1."""
     g = torch.Generator(device="cpu").manual_seed(seed)
 
@@ -117,9 +149,13 @@ def materialize(spec: OpSpec, sizes: dict[str, int], seed: int, device: str,
             shape = [dim(s) for s in t["shape"]]
             dt = DTYPES[t["dtype"]]
             if dt.is_floating_point:
-                x = torch.rand(shape, generator=g, dtype=torch.float32) * 2 - 1
-                if value_fn is not None:
-                    x = value_fn(x)
+                dom = t.get("domain")
+                if dom:
+                    x = draw_domain(dom, shape, g, stress)
+                else:
+                    x = torch.rand(shape, generator=g, dtype=torch.float32) * 2 - 1
+                    if value_fn is not None:
+                        x = value_fn(x)
                 x = x.to(dt)
             elif dt == torch.bool:
                 x = torch.rand(shape, generator=g) > 0.5

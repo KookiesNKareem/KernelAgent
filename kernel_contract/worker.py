@@ -75,7 +75,8 @@ def run_case(spec: OpSpec, kernel, case: dict, device: str) -> dict:
 
     def fresh():
         # rebuilt from the seed for every call: a clone would not keep a gapped view's strides
-        return materialize(spec, sizes, case["seed"], device, layout=case.get("layout"), value_fn=vf)
+        return materialize(spec, sizes, case["seed"], device, layout=case.get("layout"), value_fn=vf,
+                           stress=case.get("stress"))
 
     args, kwargs = fresh()
     fn = spec.reference()

@@ -30,6 +30,11 @@ def build_cases(spec: OpSpec, contract: str = "strided") -> list[dict]:
     for s, v in spec.sizes.items():
         for nv in sorted({v + 1, v // 2 + 1} - {v}):
             cases.append({"name": f"{s}={nv}", "axis": "sizes", "seed": 0, "sizes": {s: nv}})
+    domains = {a["tensor"].get("domain") for a in spec.args if isinstance(a, dict) and "tensor" in a}
+    if "logdecay" in domains:
+        cases += [{"name": n, "axis": "values", "seed": 0, "stress": n} for n in ("decay_none", "decay_strong")]
+    if "unit" in domains:
+        cases.append({"name": "gate_edges", "axis": "values", "seed": 0, "stress": "gate_edges"})
     if contract == "strided":
         cases += [{"name": lay, "axis": "layout", "seed": 0, "layout": lay} for lay in LAYOUTS]
     return cases

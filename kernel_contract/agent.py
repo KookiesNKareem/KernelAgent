@@ -30,6 +30,9 @@ CASE_TEXT = {
     "strided3_off1": "each tensor is a view with its last-dimension stride tripled and a storage offset of 1",
     "transposed": "each tensor has its last two dimensions stored transposed in memory (same logical values)",
     "leading_swap": "each tensor has its first two dimensions stored swapped in memory (same logical values)",
+    "decay_none": "every log-decay input is exactly 0 (no decay: the state accumulates over the whole sequence)",
+    "decay_strong": "every log-decay input is between -25 and -5 (the state is almost erased every step)",
+    "gate_edges": "every gate input is within 1e-4 of 0 or of 1",
 }
 
 

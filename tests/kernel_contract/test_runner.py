@@ -40,3 +40,11 @@ def test_observed_strides_are_replayed():
     spec = capture("torch.nn.functional.layer_norm", (x, (64,)))
     assert spec.args[0]["tensor"]["contiguous"] is False
     assert run_contract(spec, K / "good_softmax.py", device="cpu", cases=[{"name": "observed", "axis": "seed", "seed": 0}]).outcome in ("wrong", "refuse")
+
+
+def test_gradients_checked():
+    spec = capture("torch.softmax", (torch.randn(6, 32), 1))
+    spec.flags["check_grads"] = True
+    assert run_contract(spec, K / "good_softmax.py", device="cpu").outcome == "accept"
+    bad = run_contract(spec, K / "detached_softmax.py", device="cpu")
+    assert bad.outcome == "wrong" and "gradient" in bad.failures[0]["reason"]

@@ -26,8 +26,10 @@ def gdr_spec(B=2, H=4, T=512, D=128):
     return with_domains(spec, {1: "l2row", 3: "logdecay", 4: "unit"})
 
 
-def main(path: str):
+def main(path: str, grads: bool = False):
     spec = gdr_spec()
+    if grads:
+        spec.flags["check_grads"] = True
     v = run_contract(spec, Path(path), timeout=900)
     print(json.dumps({"verdict": v.outcome, "by_outcome": Counter(r["outcome"] for r in v.results),
                       "failures": [(r["name"], r["outcome"], r.get("reason", "")[:160] or round(r.get("err", 0), 4))
@@ -47,4 +49,4 @@ def main(path: str):
 
 
 if __name__ == "__main__":
-    main(sys.argv[1])
+    main(sys.argv[1], grads="--grads" in sys.argv)

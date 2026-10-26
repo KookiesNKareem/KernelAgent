@@ -106,8 +106,50 @@ def run_case(spec: OpSpec, kernel, case: dict, device: str) -> dict:
         if any(s in msg for s in DEVICE_ERRORS):
             return {"outcome": "crash", "reason": msg[:300]}
         return {"outcome": "refuse", "reason": msg[:300]}
-    return compare(out, ref, truth, any_float=spec.flags.get("any_float_output", False),
-                   normwise=spec.flags.get("normwise_rtol"))
+    fwd = compare(out, ref, truth, any_float=spec.flags.get("any_float_output", False),
+                  normwise=spec.flags.get("normwise_rtol"))
+    if fwd["outcome"] != "accept" or not spec.flags.get("check_grads"):
+        return fwd
+    return check_grads(spec, kernel, fresh, fn, case, device, fwd)
+
+
+def check_grads(spec, kernel, fresh, fn, case, device, fwd: dict) -> dict:
+    """Backpropagate the same random cotangent through the kernel and through the float64 reference."""
+    rtol = spec.flags.get("normwise_rtol", 2e-2)
+    args, kwargs = fresh()
+    idx = [i for i, a in enumerate(args) if isinstance(a, torch.Tensor) and a.is_floating_point()]
+    for i in idx:
+        args[i].requires_grad_(True)
+    try:
+        out = first_tensor(kernel(*args, **kwargs))
+        gen = torch.Generator(device="cpu").manual_seed(1234 + case["seed"])
+        w = torch.randn(out.shape, generator=gen).to(device)
+        (out.float() * w).sum().backward()
+        if device.startswith("cuda"):
+            torch.cuda.synchronize()
+    except Exception as e:
+        msg = f"{type(e).__name__}: {e}"
+        kind = "crash" if any(s in msg for s in DEVICE_ERRORS) else "refuse"
+        return {"outcome": kind, "reason": ("backward: " + msg)[:300]}
+    targs, tkwargs = fresh()
+    targs = [a.double().detach().requires_grad_(True) if i in idx else a for i, a in enumerate(targs)]
+    (first_tensor(fn(*targs, **tkwargs)).double() * w.double()).sum().backward()
+    worst = {"outcome": "accept", **{k: fwd[k] for k in ("err", "torch_err", "scale") if k in fwd}}
+    for i in idx:
+        gk, gt = args[i].grad, targs[i].grad
+        if gk is None:
+            return {"outcome": "wrong", "reason": f"no gradient for argument {i}"}
+        if tuple(gk.shape) != tuple(gt.shape):
+            return {"outcome": "wrong", "reason": f"gradient of argument {i} has shape {tuple(gk.shape)}"}
+        gk, gt = gk.double(), gt.double()
+        if not torch.isfinite(gk).all():
+            return {"outcome": "wrong", "reason": f"gradient of argument {i} is not finite"}
+        scale = float(gt.abs().max())
+        err = float((gk - gt).abs().max())
+        if err > rtol * max(scale, 1e-30):
+            return {"outcome": "wrong", "reason": f"gradient of argument {i}: max error {err:.3g} on gradients up to {scale:.3g}",
+                    "err": err, "scale": scale, "grad_arg": i}
+    return worst
 
 
 def main():

@@ -116,7 +116,7 @@ class OpSite:
 
 def _time(fn, reps: int = 20) -> float:
     cuda = torch.cuda.is_available()
-    for _ in range(3):
+    for _ in range(5):
         fn()
     if cuda:
         torch.cuda.synchronize()
@@ -131,6 +131,8 @@ def _time(fn, reps: int = 20) -> float:
 @torch.no_grad()
 def trace(model: torch.nn.Module, inputs: tuple, device: str = "cuda") -> list[OpSite]:
     """Every distinct op call in one forward pass, timed by replay, hottest first."""
+    for _ in range(2):
+        model(*inputs)  # one-time GPU setup must not land on whichever op is timed first
     rec = _Recorder()
     with rec:
         model(*inputs)

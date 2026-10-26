@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kernel Contract</title>
+<style>
+:root {
+  --bg: #fcfcfb; --panel: #ffffff; --ink: #1b1d22; --ink-2: #4a4f59; --muted: #8a909c; --line: #e6e7ea;
+  --accept: #3F74B8; --refuse: #E0A843; --crash: #7A5EA8; --wrong: #B5342A; --pending: #d4d7dd;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111317; --panel: #181b21; --ink: #eceef2; --ink-2: #b6bcc7; --muted: #7d8492; --line: #2a2f38;
+    --accept: #6C9BD8; --refuse: #E8B95C; --crash: #9D84CC; --wrong: #D9564A; --pending: #3a404b;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111317; --panel: #181b21; --ink: #eceef2; --ink-2: #b6bcc7; --muted: #7d8492; --line: #2a2f38;
+  --accept: #6C9BD8; --refuse: #E8B95C; --crash: #9D84CC; --wrong: #D9564A; --pending: #3a404b;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 -apple-system, "Segoe UI", Inter, sans-serif; }
+header { display: flex; align-items: baseline; gap: 16px; padding: 18px 24px; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+header h1 { font-size: 17px; margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+header .meta { color: var(--muted); font-size: 13px; }
+header .status { margin-left: auto; font-size: 13px; color: var(--ink-2); }
+main { display: grid; grid-template-columns: 320px 1fr; gap: 20px; padding: 20px 24px; max-width: 1400px; margin: 0 auto; }
+@media (max-width: 860px) { main { grid-template-columns: 1fr; padding: 16px; } }
+section.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
+h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+.site { display: grid; grid-template-columns: 1fr 52px; gap: 4px 8px; align-items: center; margin-bottom: 9px; }
+.site .name { font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.site .pct { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink-2); font-size: 12px; }
+.site .bar { grid-column: 1 / 3; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.site .bar i { display: block; height: 100%; border-radius: 3px; background: var(--pending); transition: background .3s; }
+.site.working .bar i { background: var(--ink-2); }
+.site.deployed .bar i { background: var(--accept); }
+.site.rejected .bar i { background: var(--wrong); }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; margin-top: 14px; font-size: 12px; color: var(--ink-2); }
+.legend span::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 6px; vertical-align: -1px; background: var(--c); }
+#ops { display: flex; flex-direction: column; gap: 16px; }
+.op h3 { margin: 0; font-family: var(--mono); font-size: 14px; font-weight: 600; }
+.op .call { font-family: var(--mono); font-size: 11.5px; color: var(--muted); margin: 6px 0 12px; word-break: break-all; }
+.attempt { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
+.attempt .head { display: flex; gap: 10px; align-items: baseline; font-size: 13px; margin-bottom: 10px; flex-wrap: wrap; }
+.attempt .kind { font-weight: 600; }
+.attempt .who { color: var(--muted); }
+.badge { font-size: 11.5px; font-weight: 650; padding: 2px 8px; border-radius: 99px; color: #fff; background: var(--pending); margin-left: auto; }
+.badge.accept { background: var(--accept); } .badge.wrong { background: var(--wrong); }
+.badge.refuse { background: var(--refuse); color: #1b1d22; } .badge.crash { background: var(--crash); }
+.axes { display: grid; grid-template-columns: 70px 1fr; gap: 6px 10px; align-items: center; }
+.axes .ax { font-size: 12px; color: var(--muted); }
+.cells { display: flex; gap: 3px; flex-wrap: wrap; }
+.cell { width: 16px; height: 16px; border-radius: 4px; background: var(--pending); position: relative; cursor: default; }
+.cell.accept { background: var(--accept); } .cell.wrong { background: var(--wrong); }
+.cell.refuse { background: var(--refuse); } .cell.crash { background: var(--crash); }
+.cell.skip { background: transparent; border: 1px dashed var(--muted); }
+.cell:hover::after { content: attr(data-tip); position: absolute; left: 0; top: 22px; z-index: 5; width: max-content; max-width: 360px;
+  background: var(--ink); color: var(--bg); font-size: 12px; padding: 6px 8px; border-radius: 6px; white-space: normal; }
+.finding { margin-top: 12px; padding: 10px 12px; border-left: 3px solid var(--wrong); background: color-mix(in srgb, var(--wrong) 9%, transparent); border-radius: 0 6px 6px 0; font-size: 13px; }
+.finding.refuse { border-color: var(--refuse); background: color-mix(in srgb, var(--refuse) 12%, transparent); }
+.finding b { font-family: var(--mono); font-weight: 600; }
+.deploy { margin-top: 12px; font-size: 13px; color: var(--ink-2); }
+.deploy strong { color: var(--accept); }
+#result .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.stat .v { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
+.stat .l { font-size: 12px; color: var(--muted); }
+.empty { color: var(--muted); font-size: 13px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Kernel Contract</h1>
+  <span class="meta" id="meta">waiting for a run</span>
+  <span class="status" id="status"></span>
+</header>
+<main>
+  <div>
+    <section class="panel">
+      <h2>Where the model spends time</h2>
+      <div id="sites"><div class="empty">Tracing the model</div></div>
+      <div class="legend">
+        <span style="--c: var(--accept)">deployed</span>
+        <span style="--c: var(--ink-2)">in progress</span>
+        <span style="--c: var(--wrong)">rejected</span>
+        <span style="--c: var(--pending)">not attempted</span>
+      </div>
+    </section>
+    <section class="panel" style="margin-top:20px">
+      <h2>Case outcomes</h2>
+      <div class="legend" style="margin-top:0">
+        <span style="--c: var(--accept)">matches PyTorch</span>
+        <span style="--c: var(--wrong)">wrong values</span>
+        <span style="--c: var(--refuse)">refused input</span>
+        <span style="--c: var(--crash)">crashed</span>
+      </div>
+    </section>
+  </div>
+  <div>
+    <div id="ops"></div>
+    <section class="panel" id="result" style="margin-top:16px; display:none">
+      <h2>Whole model, verified kernels installed behind the guard</h2>
+      <div class="stats" id="stats"></div>
+      <div class="deploy" id="routing"></div>
+    </section>
+  </div>
+</main>
+<script>
+const AXES = ["seed", "values", "sizes", "layout"];
+const AXIS_LABEL = {seed: "inputs", values: "values", sizes: "sizes", layout: "layout"};
+const ops = {};
+const siteRows = {};
+
+function el(tag, attrs = {}, text) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (text !== undefined) e.textContent = text;
+  return e;
+}
+
+function setSite(op, cls) {
+  const r = siteRows[op];
+  if (r) r.className = "site " + cls;
+}
+
+function opCard(name, call) {
+  if (ops[name]) return ops[name];
+  const card = el("section", {class: "panel op"});
+  card.append(el("h3", {}, name));
+  card.append(el("div", {class: "call"}, call || ""));
+  document.getElementById("ops").append(card);
+  ops[name] = {card, attempts: {}};
+  return ops[name];
+}
+
+function attemptBlock(o, i, kind, model) {
+  if (o.attempts[i]) return o.attempts[i];
+  const box = el("div", {class: "attempt"});
+  const head = el("div", {class: "head"});
+  head.append(el("span", {class: "kind"}, kind === "write" ? "Written" : "Repaired from counterexample"));
+  const who = el("span", {class: "who"}, model ? `by ${model}` : "");
+  const badge = el("span", {class: "badge"}, "writing");
+  head.append(who, badge);
+  box.append(head);
+  const axes = el("div", {class: "axes"});
+  const rows = {};
+  for (const ax of AXES) {
+    axes.append(el("span", {class: "ax"}, AXIS_LABEL[ax]));
+    const c = el("div", {class: "cells"});
+    axes.append(c);
+    rows[ax] = c;
+  }
+  box.append(axes);
+  o.card.append(box);
+  o.attempts[i] = {box, badge, who, rows, findings: 0};
+  return o.attempts[i];
+}
+
+function fmt(x) { return x === undefined || x === null ? "" : Number(x).toPrecision(3); }
+
+function handle(e) {
+  const status = document.getElementById("status");
+  switch (e.event) {
+    case "trace_start":
+      document.getElementById("meta").textContent = e.model;
+      status.textContent = "tracing";
+      break;
+    case "trace_done": {
+      const box = document.getElementById("sites");
+      box.innerHTML = "";
+      for (const s of e.sites.slice(0, 12)) {
+        const row = el("div", {class: "site"});
+        row.append(el("span", {class: "name", title: s.call}, s.op));
+        row.append(el("span", {class: "pct"}, (100 * s.share).toFixed(0) + "%"));
+        const bar = el("div", {class: "bar"});
+        const fill = el("i");
+        fill.style.width = Math.max(2, 100 * s.share / e.sites[0].share) + "%";
+        bar.append(fill);
+        row.append(bar);
+        box.append(row);
+        siteRows[s.op] = row;
+      }
+      status.textContent = "writing kernels";
+      break;
+    }
+    case "llm_start": {
+      const o = opCard(e.op, e.call);
+      attemptBlock(o, e.attempt, e.kind, e.model);
+      setSite(e.op, "working");
+      if (!document.getElementById("meta").textContent.includes(e.model))
+        document.getElementById("meta").textContent += ` · writer ${e.model}`;
+      break;
+    }
+    case "llm_done": {
+      const a = ops[e.op].attempts[e.attempt];
+      a.badge.textContent = "checking";
+      a.who.textContent += ` in ${e.seconds.toFixed(0)} s`;
+      break;
+    }
+    case "case": {
+      const a = ops[e.op].attempts[e.attempt];
+      const c = el("span", {class: "cell " + e.outcome});
+      let tip = `${e.name}: ${e.means || ""}. `;
+      if (e.outcome === "wrong") tip += e.reason ? e.reason : `Wrong: error ${fmt(e.err)} vs PyTorch's ${fmt(e.torch_err)}`;
+      else if (e.outcome === "accept") tip += "Matches PyTorch.";
+      else tip += (e.outcome === "refuse" ? "Refused: " : "Crashed: ") + (e.reason || "");
+      c.dataset.tip = tip;
+      (a.rows[e.axis] || a.rows.seed).append(c);
+      if ((e.outcome === "wrong" || e.outcome === "refuse") && a.findings < 1) {
+        a.findings++;
+        const f = el("div", {class: "finding" + (e.outcome === "refuse" ? " refuse" : "")});
+        f.append(el("b", {}, e.name));
+        f.append(document.createTextNode(e.outcome === "wrong"
+          ? ` — ${e.means}. The kernel returns wrong values without raising` + (e.err ? `: max error ${fmt(e.err)} where PyTorch's own is ${fmt(e.torch_err)}.` : ".")
+          : ` — ${e.means}. The kernel refuses this input.`));
+        a.box.append(f);
+      }
+      break;
+    }
+    case "verdict": {
+      const a = ops[e.op].attempts[e.attempt];
+      a.badge.className = "badge " + e.outcome;
+      a.badge.textContent = {accept: "passes the contract", wrong: "silently wrong", refuse: "refuses inputs", crash: "crashes"}[e.outcome];
+      break;
+    }
+    case "install": {
+      const o = ops[e.op];
+      const d = el("div", {class: "deploy"});
+      const limits = [];
+      if (!e.strided_ok) limits.push("non-contiguous calls fall back to PyTorch");
+      if (e.pinned && e.pinned.length) limits.push(`sizes ${e.pinned.join(", ")} held at their verified values`);
+      d.innerHTML = `<strong>Deployed</strong> behind the guard` + (limits.length ? ` — ${limits.join("; ")}.` : ", for every input class checked.");
+      o.card.append(d);
+      setSite(e.op, "deployed");
+      break;
+    }
+    case "reject": {
+      const d = el("div", {class: "deploy"}, "Not deployed: still fails on inputs a guard cannot exclude. PyTorch keeps this op.");
+      ops[e.op].card.append(d);
+      setSite(e.op, "rejected");
+      break;
+    }
+    case "model_compare": {
+      status.textContent = "done";
+      document.getElementById("result").style.display = "";
+      const stats = document.getElementById("stats");
+      stats.innerHTML = "";
+      const add = (v, l) => { const s = el("div", {class: "stat"}); s.append(el("div", {class: "v"}, v), el("div", {class: "l"}, l)); stats.append(s); };
+      add(e.speedup.toFixed(2) + "×", `${e.eager_ms.toFixed(2)} ms eager → ${e.guarded_ms.toFixed(2)} ms`);
+      add(fmt(e.max_abs_diff), `max output difference (outputs up to ${fmt(e.output_scale)})`);
+      const routed = Object.values(e.routed || {}).reduce((a, b) => a + b, 0);
+      const fb = Object.values(e.fallback || {}).reduce((a, b) => a + b, 0);
+      add(`${routed} / ${routed + fb}`, "calls served by verified kernels");
+      const reasons = Object.entries(e.fallback_reasons || {}).map(([k, v]) => `${v} × ${k}`).join("; ");
+      document.getElementById("routing").textContent = reasons ? `Fallbacks: ${reasons}.` : "No call needed a fallback.";
+      break;
+    }
+  }
+}
+
+const src = new EventSource("/events");
+src.onmessage = (m) => { try { handle(JSON.parse(m.data)); } catch (err) { console.error(err, m.data); } };
+</script>
+</body>
+</html>

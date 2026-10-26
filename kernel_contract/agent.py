@@ -164,7 +164,7 @@ def solve(spec: OpSpec, model: str, workdir: Path, max_repairs: int = 3, contrac
     prompt = WRITE_PROMPT.format(call=call, params=param_names(spec))
     kind = "write"
     for i in range(max_repairs + 1):
-        emit({"event": "llm_start", "op": spec.name, "kind": kind, "attempt": i, "model": model})
+        emit({"event": "llm_start", "op": spec.name, "kind": kind, "attempt": i, "model": model, "call": call})
         t0 = time.time()
         resp = provider.get_response(model, [{"role": "user", "content": prompt}], **llm_kwargs)
         seconds = time.time() - t0
@@ -177,7 +177,8 @@ def solve(spec: OpSpec, model: str, workdir: Path, max_repairs: int = 3, contrac
         emit({"event": "llm_done", "op": spec.name, "kind": kind, "attempt": i, "seconds": seconds,
               "path": str(path), "usage": resp.usage})
         verdict = run_contract(spec, path, contract=contract, device=device,
-                               on_case=lambda r: emit({"event": "case", "op": spec.name, "attempt": i, **r}))
+                               on_case=lambda r: emit({"event": "case", "op": spec.name, "attempt": i,
+                                                       "means": describe_case(r["name"], spec), **r}))
         result.attempts.append(Attempt(kind, source, verdict, seconds, resp.usage))
         emit({"event": "verdict", "op": spec.name, "attempt": i, "outcome": verdict.outcome,
               "failures": [f["name"] for f in verdict.failures]})

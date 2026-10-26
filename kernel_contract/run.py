@@ -47,6 +47,9 @@ def main():
     ap.add_argument("--reasoning-effort", default=None)
     ap.add_argument("--out", type=Path, required=True)
     ap.add_argument("--device", default="cuda")
+    ap.add_argument("--skip", default="linear,scaled_dot_product_attention,conv",
+                    help="op name fragments left to vendor libraries (cuBLAS, cuDNN, FlashAttention)")
+    ap.add_argument("--only", default="", help="comma list of site name prefixes to attempt")
     a = ap.parse_args()
 
     log = Log(a.out / "events.jsonl")
@@ -58,7 +61,11 @@ def main():
                                            "ms_total": s.ms_total, "share": s.ms_total / total} for s in sites[:20]]})
     installed = []
     llm_kwargs = {"reasoning_effort": a.reasoning_effort} if a.reasoning_effort else {}
-    for site in sites[: a.top]:
+    skip = [x for x in a.skip.split(",") if x]
+    only = [x for x in a.only.split(",") if x]
+    todo = [s for s in sites if not any(k in s.spec.op for k in skip)
+            and (not only or any(s.spec.name.startswith(o) for o in only))]
+    for site in todo[: a.top]:
         res = solve(site.spec, a.model_id, a.out / "kernels", max_repairs=a.repairs, device=a.device,
                     emit=log, **llm_kwargs)
         final = res.final

@@ -55,7 +55,10 @@ def make_handler(events: Path, replay: float | None):
                         time.sleep(min(max(t - prev, 0) / replay, 3.0))
                     prev = t
                     self._send(x)
-                return
+                while True:  # keep the stream open so the browser does not reconnect and replay again
+                    time.sleep(15)
+                    self.wfile.write(b": keepalive\n\n")
+                    self.wfile.flush()
             pos = 0
             while True:
                 if events.exists():

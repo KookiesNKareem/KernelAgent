@@ -50,6 +50,7 @@ h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: 
 .badge { font-size: 11.5px; font-weight: 650; padding: 2px 8px; border-radius: 99px; color: #fff; background: var(--pending); margin-left: auto; }
 .badge.accept { background: var(--accept); } .badge.wrong { background: var(--wrong); }
 .badge.refuse { background: var(--refuse); color: #1b1d22; } .badge.crash { background: var(--crash); }
+.badge.limited { background: transparent; color: var(--accept); box-shadow: inset 0 0 0 1.5px var(--accept); }
 .axes { display: grid; grid-template-columns: 70px 1fr; gap: 6px 10px; align-items: center; }
 .axes .ax { font-size: 12px; color: var(--muted); }
 .cells { display: flex; gap: 3px; flex-wrap: wrap; }
@@ -196,7 +197,7 @@ function handle(e) {
     case "llm_done": {
       const a = ops[e.op].attempts[e.attempt];
       a.badge.textContent = "checking";
-      a.who.textContent += ` in ${e.seconds.toFixed(0)} s`;
+      if (!a.timed) { a.who.textContent += ` in ${e.seconds.toFixed(0)} s`; a.timed = true; }
       break;
     }
     case "case": {
@@ -221,8 +222,15 @@ function handle(e) {
     }
     case "verdict": {
       const a = ops[e.op].attempts[e.attempt];
-      a.badge.className = "badge " + e.outcome;
-      a.badge.textContent = {accept: "passes the contract", wrong: "silently wrong", refuse: "refuses inputs", crash: "crashes"}[e.outcome];
+      const axes = e.failing_axes || [];
+      const guardable = e.outcome !== "accept" && axes.length && axes.every(x => x === "sizes" || x === "layout");
+      if (guardable) {
+        a.badge.className = "badge limited";
+        a.badge.textContent = "passes within limits";
+      } else {
+        a.badge.className = "badge " + e.outcome;
+        a.badge.textContent = {accept: "passes the contract", wrong: "silently wrong", refuse: "refuses inputs", crash: "crashes"}[e.outcome];
+      }
       break;
     }
     case "install": {

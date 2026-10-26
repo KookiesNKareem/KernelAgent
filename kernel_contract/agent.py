@@ -181,7 +181,8 @@ def solve(spec: OpSpec, model: str, workdir: Path, max_repairs: int = 3, contrac
                                                        "means": describe_case(r["name"], spec), **r}))
         result.attempts.append(Attempt(kind, source, verdict, seconds, resp.usage))
         emit({"event": "verdict", "op": spec.name, "attempt": i, "outcome": verdict.outcome,
-              "failures": [f["name"] for f in verdict.failures]})
+              "failures": [f["name"] for f in verdict.failures],
+              "failing_axes": sorted({f["axis"] for f in verdict.failures})})
         if verdict.outcome == "accept":
             break
         passes = ", ".join(r["name"] for r in verdict.results if r["outcome"] == "accept") or "none"

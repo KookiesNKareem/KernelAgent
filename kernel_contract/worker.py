@@ -47,7 +47,8 @@ def to_f64(x):
     return x
 
 
-def compare(out: torch.Tensor, ref: torch.Tensor, truth: torch.Tensor, any_float: bool = False) -> dict:
+def compare(out: torch.Tensor, ref: torch.Tensor, truth: torch.Tensor, any_float: bool = False,
+            normwise: float | None = None) -> dict:
     if tuple(out.shape) != tuple(ref.shape):
         return {"outcome": "wrong", "reason": f"shape {tuple(out.shape)} != {tuple(ref.shape)}"}
     if out.dtype != ref.dtype and not (any_float and out.is_floating_point() and ref.is_floating_point()):
@@ -65,7 +66,11 @@ def compare(out: torch.Tensor, ref: torch.Tensor, truth: torch.Tensor, any_float
     scale = float(t.abs().max())
     err = float((o - t).abs().max())
     torch_err = float((r - t).abs().max())
-    within = bool(((o - t).abs() <= atol * min(1.0, scale) + rtol * t.abs()).all())
+    if normwise is not None:
+        # long reductions in low precision: bound the error relative to the output's scale, not per element
+        within = err <= normwise * scale
+    else:
+        within = bool(((o - t).abs() <= atol * min(1.0, scale) + rtol * t.abs()).all())
     ok = within or (torch_err > 0 and err <= 2 * torch_err)
     return {"outcome": "accept" if ok else "wrong", "err": err, "torch_err": torch_err, "scale": scale}
 
@@ -101,7 +106,8 @@ def run_case(spec: OpSpec, kernel, case: dict, device: str) -> dict:
         if any(s in msg for s in DEVICE_ERRORS):
             return {"outcome": "crash", "reason": msg[:300]}
         return {"outcome": "refuse", "reason": msg[:300]}
-    return compare(out, ref, truth, any_float=spec.flags.get("any_float_output", False))
+    return compare(out, ref, truth, any_float=spec.flags.get("any_float_output", False),
+                   normwise=spec.flags.get("normwise_rtol"))
 
 
 def main():

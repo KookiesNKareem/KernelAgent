@@ -1,4 +1,75 @@
-# KernelAgent — Multi‑Agent GPU Kernel Synthesis and Optimization
+# Change the equation, keep training
+
+**Built during the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026).** Everything under
+`kernel_contract/` and every commit after upstream `e064717` was written during the event; the rest of
+this repository is upstream [KernelAgent](https://github.com/meta-pytorch/KernelAgent), described below.
+
+New sequence layers (delta rules, erase/write variants, gated recurrences) ship as a slow Python loop over
+time. Training with that loop takes days, and a hand-written chunked kernel takes an expert weeks per
+layer, so most equation edits are never trained at scale. This project hands a Meta model the equation and
+the slow loop and gets back a chunked Triton forward **and backward** that a training run can use, checked
+by an independent contract the model does not control.
+
+- **Writer:** Muse Wonder (Meta Model API) or Muse Spark Open (open weights, via Baseten).
+- **Prompt:** only the equation, the reference loop, the target GPU, "match the reference on any inputs it
+  accepts" and "use your own Triton". No algorithm hints, no expert timings.
+- **Feedback:** only the checker's counterexamples and the GPU profile. No human edits.
+- **Checker:** float64 ground truth; fresh seeds, value scales and shifts, size changes (odd head dims,
+  ragged T), strided, transposed and offset layouts, extreme decay and gate values, a compound case, the
+  exact timed and training shapes, K != V, and every gradient against float64 autograd.
+
+## Results (NVIDIA L4, B=4, H=8, T=2048, K=V=128, same-pod back-to-back medians)
+
+| Layer | Writer | Forward | Fwd+bwd | Slow loop fwd / fwd+bwd | Best existing route fwd / fwd+bwd | Model cost |
+|---|---|---|---|---|---|---|
+| Gated delta rule (calibration) | Muse Wonder | 1.65 ms | 16.2 ms | 361 / 3551 ms | FLA 1.53 / 5.7 ms | $3.50 |
+| Scalar-decay EDA (arXiv 2606.26560) | Muse Wonder | 2.16 ms | 32.2 ms | 220 / 4540 ms | FLA interleave 4.21 / 12.1 ms | ~$3 |
+| Variant written before any model saw it (`6c22865`) | Muse Wonder | 5.87 ms | 23.6 ms | 500 / 6064 ms | KDA interleave 8.27 / 22.4 ms | $2.60 |
+| Same variant | Muse Spark Open | 11.0 ms | 397 ms | 500 / 6064 ms | KDA interleave 8.27 / 22.4 ms | $0.96 |
+
+Warm `torch.compile` of the slow loop: gated delta rule forward 37.4 ms after 24 minutes of compiling;
+EDA forward 83 ms after 43 minutes.
+
+**Training** (byte-level LM with the variant as its mixer, 4 layers, 300 steps, same init and batches):
+
+| Mixer | Step time | Final val loss | Peak memory |
+|---|---|---|---|
+| Slow reference loop | 2585 ms | 1.662 | 14.1 GB |
+| Muse Wonder kernel | 52.6 ms | 1.661 | 1.3 GB |
+| KDA interleave (expert route) | 46.6 ms | 1.664 | 1.3 GB |
+
+The kernel's loss tracks the reference within 0.005 over the first 10 steps (0.038 max over 300, the same
+as the expert route), and every parameter gradient matches the reference to within 0.9% on step one.
+
+**What the checker caught along the way** (all fixed by the model from the counterexample alone): shared
+memory overflow on the first write of every layer; silently wrong values at head dims 65 and 129; an
+optimized kernel that was wrong only when the state decays almost fully each step; a backward with a wrong
+`dq` on every input.
+
+**Known limits.** Kernels that fail at K=V=129 do so by running out of shared memory. Speeds are for one
+GPU and one shape. The EDA here uses scalar decay; the paper's main form is per-channel. Muse Wonder
+reports a February 2026 training cutoff, before EDA was posted; self-reports are not proof.
+
+## Reproduce
+
+```bash
+pip install -e . && pip install flash-linear-attention==0.6.0
+echo "MODEL_API_KEY=..." > .env          # Meta Model API; BASETEN_API_KEY for Spark Open
+python -m kernel_contract.paper_agent --model muse-wonder-1.0 --layer wek --eager-ms 500 \
+    --remote "ssh gpu-host" --out runs/mine     # model calls run locally, kernels are checked on the GPU host
+python -m kernel_contract.recur_eval kernel_contract/recur_cands/wek_wonder_fwdbwd.py --layer wek --grads
+python -m kernel_contract.rematch --layer wek --fwd kernel_contract/recur_cands/wek_wonder_fwd.py \
+    --fwdbwd kernel_contract/recur_cands/wek_wonder_fwdbwd.py
+python -m kernel_contract.train_demo --layer wek --mixer kernel_contract/recur_cands/wek_wonder_fwdbwd.py --out k.jsonl
+```
+
+Full transcripts of every run (prompts, responses, checker verdicts, costs) are in `runs_public/`. Spend is
+capped per run and overall; every call reserves its worst case first (`utils/providers/meta_provider.py`).
+
+---
+
+# Upstream: KernelAgent
+
 
 KernelAgent turns PyTorch programs into verified Triton kernels and optimize its performance. It was designed around KernelBench workloads and combines:
 

@@ -28,6 +28,12 @@ def summarize(run: Path, model: str) -> dict:
         g = bool(e["grads"])
         if best[g] is None or e["ms"] < best[g]:
             best[g] = e["ms"]
+    # backward candidates re-judged after the unused-input gradient fix (27c05de)
+    for f in run.parent.glob("rescore_*.jsonl"):
+        for r in map(json.loads, f.read_text().splitlines()):
+            if r["run"] == run.name and r["outcome"] == "accept" and r["ms"] and \
+                    (best[True] is None or r["ms"] < best[True]):
+                best[True] = r["ms"]
     return {"fwd_ms": best[False], "fwd_bwd_ms": best[True], "calls": len(calls),
             "usd": sum(usage_cost(FULL_ID.get(model, model), e.get("usage")) for e in calls)}
 

@@ -5,8 +5,13 @@ import triton.language as tl
 
 # ---------------------------------------------------------------------------
 # (I - N)^-1 = I + N + N^2 + ... for strictly triangular (nilpotent) N,
-# evaluated by repeated squaring, and its adjoint
-# dL/dN = Y^T (dL/dY) Y^T for Y = (I - N)^-1.
+# evaluated by repeated squaring (exact in exact arithmetic), and its
+# adjoint dL/dN = Y^T (dL/dY) Y^T for Y = (I - N)^-1.
+#
+# All chunk-path matrix products below are evaluated in full fp32
+# ("ieee"), not tf32: the transformed Gram / delta-rule systems inside a
+# chunk can be ill conditioned, and tf32 rounding in these products can
+# be amplified by large cancelling intermediates.
 # ---------------------------------------------------------------------------
 @triton.jit
 def _series_sum(N, BT: tl.constexpr, STEPS: tl.constexpr):
@@ -21,8 +26,8 @@ def _series_sum(N, BT: tl.constexpr, STEPS: tl.constexpr):
 
 @triton.jit
 def _series_grad(Op, GOp):
-    tmp = tl.dot(tl.trans(Op), GOp, input_precision="tf32")
-    return tl.dot(tmp, tl.trans(Op), input_precision="tf32")
+    tmp = tl.dot(tl.trans(Op), GOp, input_precision="ieee")
+    return tl.dot(tmp, tl.trans(Op), input_precision="ieee")
 
 
 # ---------------------------------------------------------------------------
@@ -86,25 +91,25 @@ def _pre_kernel(
     beta = tl.load(beta_ptr + bh * T + start + off_t, mask=m_t, other=0.0).to(tl.float32)
     gamma = tl.load(gamma_ptr + bh * T + start + off_t, mask=m_t, other=0.0).to(tl.float32)
 
-    gram_u = tl.dot(uu, tl.trans(uu), input_precision="tf32")
+    gram_u = tl.dot(uu, tl.trans(uu), input_precision="ieee")
 
     # vhat_i = P_i^-T v_i = v_i + sum_{j<=i} alpha_{j,i} u_j
     delta = gamma / (1.0 - gamma)
     b_alpha = tl.where(
-        upper, delta[:, None] * tl.dot(uu, tl.trans(vv), input_precision="tf32"), 0.0
+        upper, delta[:, None] * tl.dot(uu, tl.trans(vv), input_precision="ieee"), 0.0
     )
     alpha_op = _series_sum(delta[:, None] * tl.where(strict_upper, gram_u, 0.0), BT, STEPS)
-    alpha = tl.dot(alpha_op, b_alpha, input_precision="tf32")
-    v_hat = vv + tl.dot(tl.trans(alpha), uu, input_precision="tf32")
+    alpha = tl.dot(alpha_op, b_alpha, input_precision="ieee")
+    v_hat = vv + tl.dot(tl.trans(alpha), uu, input_precision="ieee")
 
     # In-chunk delta-rule coupling inverse.  h = (I + diag(beta) K)^-1
     # diag(beta) rhs, so the folded operator is left_op @ diag(beta):
     # beta scales the columns of left_op.
-    ka = tl.dot(c_key, tl.trans(a_key), input_precision="tf32")
+    ka = tl.dot(c_key, tl.trans(a_key), input_precision="ieee")
     left_op = _series_sum(-(beta[:, None] * tl.where(strict_lower, ka, 0.0)), BT, STEPS)
     mb = left_op * beta[None, :]
-    h0 = tl.dot(mb, v_hat, input_precision="tf32")
-    pmat = tl.dot(mb, c_key, input_precision="tf32")
+    h0 = tl.dot(mb, v_hat, input_precision="ieee")
+    pmat = tl.dot(mb, c_key, input_precision="ieee")
     tl.store(p_ptr + out_a, pmat, mask=m_t[:, None])
     tl.store(h0_ptr + base_v, h0, mask=m_t[:, None])
 
@@ -165,9 +170,9 @@ def _scan_kernel(
             pmat = tl.load(p_ptr + base_k, mask=m_t[:, None], other=0.0)
             qt = tl.load(qt_ptr + base_k, mask=m_t[:, None], other=0.0)
             ak = tl.load(a_ptr + base_k, mask=m_t[:, None], other=0.0)
-            pred += tl.dot(pmat, s_hat, input_precision="tf32")
-            opred += tl.dot(qt, s_hat, input_precision="tf32")
-            aq += tl.dot(qt, tl.trans(ak), input_precision="tf32")
+            pred += tl.dot(pmat, s_hat, input_precision="ieee")
+            opred += tl.dot(qt, s_hat, input_precision="ieee")
+            aq += tl.dot(qt, tl.trans(ak), input_precision="ieee")
 
         h = tl.load(h0_ptr + base_v, mask=m_t[:, None], other=0.0) - pred
         uu = tl.load(u_ptr + base_v, mask=m_t[:, None], other=0.0).to(tl.float32)
@@ -175,16 +180,16 @@ def _scan_kernel(
         op_base = (bh * NC + chunk) * BT * BT + off_t[:, None] * BT + off_t[None, :]
 
         aq = tl.where(causal, aq, 0.0)
-        o_hat = opred + tl.dot(aq, h, input_precision="tf32")
+        o_hat = opred + tl.dot(aq, h, input_precision="ieee")
         b_out = tl.where(
             upper,
-            gamma[:, None] * tl.dot(uu, tl.trans(o_hat), input_precision="tf32"),
+            gamma[:, None] * tl.dot(uu, tl.trans(o_hat), input_precision="ieee"),
             0.0,
         )
         out_op = tl.load(outop_ptr + op_base)
-        coeff = tl.dot(out_op, b_out, input_precision="tf32")
+        coeff = tl.dot(out_op, b_out, input_precision="ieee")
         coeff = tl.where(upper, coeff, 0.0)
-        out = (o_hat - tl.dot(tl.trans(coeff), uu, input_precision="tf32")) * scale
+        out = (o_hat - tl.dot(tl.trans(coeff), uu, input_precision="ieee")) * scale
         tl.store(o_ptr + base_v, out, mask=m_t[:, None])
 
         end_op = tl.load(endop_ptr + op_base)
@@ -196,10 +201,10 @@ def _scan_kernel(
             s_ptr = state_ptr + bh * BK * BV + (koff + off_kb)[:, None] * BV + off_v[None, :]
             s_hat = tl.load(s_ptr) * tl.exp(shift)[:, None]
             ak = tl.load(a_ptr + base_k, mask=m_t[:, None], other=0.0)
-            x_hat = s_hat + tl.dot(tl.trans(ak), h, input_precision="tf32")
-            e_mat = tl.dot(x_hat, tl.trans(uu), input_precision="tf32")
-            d_coeff = tl.dot(e_mat * gamma[None, :], end_op, input_precision="tf32")
-            x_end = x_hat - tl.dot(d_coeff, uu, input_precision="tf32")
+            x_hat = s_hat + tl.dot(tl.trans(ak), h, input_precision="ieee")
+            e_mat = tl.dot(x_hat, tl.trans(uu), input_precision="ieee")
+            d_coeff = tl.dot(e_mat * gamma[None, :], end_op, input_precision="ieee")
+            x_end = x_hat - tl.dot(d_coeff, uu, input_precision="ieee")
             tl.store(s_ptr, x_end * tl.exp(shift)[:, None])
 
 
@@ -260,31 +265,31 @@ def _bscan_kernel(
             pmat = tl.load(p_ptr + base_k, mask=m_t[:, None], other=0.0)
             qt = tl.load(qt_ptr + base_k, mask=m_t[:, None], other=0.0)
             ak = tl.load(a_ptr + base_k, mask=m_t[:, None], other=0.0)
-            pred += tl.dot(pmat, s_hat, input_precision="tf32")
-            opred += tl.dot(qt, s_hat, input_precision="tf32")
-            aq += tl.dot(qt, tl.trans(ak), input_precision="tf32")
+            pred += tl.dot(pmat, s_hat, input_precision="ieee")
+            opred += tl.dot(qt, s_hat, input_precision="ieee")
+            aq += tl.dot(qt, tl.trans(ak), input_precision="ieee")
         h = tl.load(h0_ptr + base_v, mask=m_t[:, None], other=0.0) - pred
         aq_c = tl.where(causal, aq, 0.0)
-        o_hat = opred + tl.dot(aq_c, h, input_precision="tf32")
+        o_hat = opred + tl.dot(aq_c, h, input_precision="ieee")
 
         # ---- adjoint of the output transform o = o_hat - Cmask^T U ----
-        bout_pre = tl.dot(uu, tl.trans(o_hat), input_precision="tf32")
+        bout_pre = tl.dot(uu, tl.trans(o_hat), input_precision="ieee")
         bout = tl.where(upper, gamma[:, None] * bout_pre, 0.0)
-        coeff = tl.where(upper, tl.dot(out_op, bout, input_precision="tf32"), 0.0)
-        gcoeff = tl.where(upper, -tl.dot(uu, tl.trans(gout), input_precision="tf32"), 0.0)
-        tl.store(doutop_ptr + op_base, tl.dot(gcoeff, tl.trans(bout), input_precision="tf32"))
+        coeff = tl.where(upper, tl.dot(out_op, bout, input_precision="ieee"), 0.0)
+        gcoeff = tl.where(upper, -tl.dot(uu, tl.trans(gout), input_precision="ieee"), 0.0)
+        tl.store(doutop_ptr + op_base, tl.dot(gcoeff, tl.trans(bout), input_precision="ieee"))
         gbout = tl.where(
-            upper, tl.dot(tl.trans(out_op), gcoeff, input_precision="tf32"), 0.0
+            upper, tl.dot(tl.trans(out_op), gcoeff, input_precision="ieee"), 0.0
         )
         gb_gamma = gbout * gamma[:, None]
-        go_hat = gout + tl.dot(tl.trans(gb_gamma), uu, input_precision="tf32")
-        gu = tl.dot(gb_gamma, o_hat, input_precision="tf32") - tl.dot(
-            coeff, gout, input_precision="tf32"
+        go_hat = gout + tl.dot(tl.trans(gb_gamma), uu, input_precision="ieee")
+        gu = tl.dot(gb_gamma, o_hat, input_precision="ieee") - tl.dot(
+            coeff, gout, input_precision="ieee"
         )
         dgamma = tl.sum(gbout * bout_pre, axis=1)
 
-        gh = tl.dot(tl.trans(aq_c), go_hat, input_precision="tf32")
-        gaq = tl.where(causal, tl.dot(go_hat, tl.trans(h), input_precision="tf32"), 0.0)
+        gh = tl.dot(tl.trans(aq_c), go_hat, input_precision="ieee")
+        gaq = tl.where(causal, tl.dot(go_hat, tl.trans(h), input_precision="ieee"), 0.0)
 
         # ---- adjoint of the state-end transform, per K block ----
         gendop = tl.zeros([BT, BT], dtype=tl.float32)
@@ -303,24 +308,24 @@ def _bscan_kernel(
             gs_ptr = gstate_ptr + bh * BK * BV + (koff + off_kb)[:, None] * BV + off_v[None, :]
             gs_out = tl.load(gs_ptr)
 
-            x_hat = s_hat + tl.dot(tl.trans(ak), h, input_precision="tf32")
-            e_mat = tl.dot(x_hat, tl.trans(uu), input_precision="tf32")
+            x_hat = s_hat + tl.dot(tl.trans(ak), h, input_precision="ieee")
+            e_mat = tl.dot(x_hat, tl.trans(uu), input_precision="ieee")
             y_mat = e_mat * gamma[None, :]
-            dcoef = tl.dot(y_mat, end_op, input_precision="tf32")
+            dcoef = tl.dot(y_mat, end_op, input_precision="ieee")
 
             gx_end = e_sh[:, None] * gs_out
-            gdcoef = -tl.dot(gx_end, tl.trans(uu), input_precision="tf32")
-            gy = tl.dot(gdcoef, tl.trans(end_op), input_precision="tf32")
-            gendop += tl.dot(tl.trans(y_mat), gdcoef, input_precision="tf32")
+            gdcoef = -tl.dot(gx_end, tl.trans(uu), input_precision="ieee")
+            gy = tl.dot(gdcoef, tl.trans(end_op), input_precision="ieee")
+            gendop += tl.dot(tl.trans(y_mat), gdcoef, input_precision="ieee")
             ge_mat = gy * gamma[None, :]
             dgamma += tl.sum(gy * e_mat, axis=0)
-            gx_hat = gx_end + tl.dot(ge_mat, uu, input_precision="tf32")
-            gu += tl.dot(tl.trans(ge_mat), x_hat, input_precision="tf32")
-            gu -= tl.dot(tl.trans(dcoef), gx_end, input_precision="tf32")
-            gh_state += tl.dot(ak, gx_hat, input_precision="tf32")
+            gx_hat = gx_end + tl.dot(ge_mat, uu, input_precision="ieee")
+            gu += tl.dot(tl.trans(ge_mat), x_hat, input_precision="ieee")
+            gu -= tl.dot(tl.trans(dcoef), gx_end, input_precision="ieee")
+            gh_state += tl.dot(ak, gx_hat, input_precision="ieee")
 
-            ga = tl.dot(tl.trans(gaq), qt, input_precision="tf32") + tl.dot(
-                h, tl.trans(gx_hat), input_precision="tf32"
+            ga = tl.dot(tl.trans(gaq), qt, input_precision="ieee") + tl.dot(
+                h, tl.trans(gx_hat), input_precision="ieee"
             )
             tl.store(da_ptr + base_k, ga, mask=m_t[:, None])
             tl.store(
@@ -353,26 +358,26 @@ def _bscan_kernel(
             )
 
             gs_hat = (
-                tl.dot(tl.trans(qt), go_hat, input_precision="tf32")
-                - tl.dot(tl.trans(pmat), gh, input_precision="tf32")
+                tl.dot(tl.trans(qt), go_hat, input_precision="ieee")
+                - tl.dot(tl.trans(pmat), gh, input_precision="ieee")
                 + gx_hat
             )
             tl.store(gs_ptr, e_sh[:, None] * gs_hat)
 
-            x_hat = s_hat + tl.dot(tl.trans(ak), h, input_precision="tf32")
-            e_mat = tl.dot(x_hat, tl.trans(uu), input_precision="tf32")
-            dcoef = tl.dot(e_mat * gamma[None, :], end_op, input_precision="tf32")
-            x_end = x_hat - tl.dot(dcoef, uu, input_precision="tf32")
+            x_hat = s_hat + tl.dot(tl.trans(ak), h, input_precision="ieee")
+            e_mat = tl.dot(x_hat, tl.trans(uu), input_precision="ieee")
+            dcoef = tl.dot(e_mat * gamma[None, :], end_op, input_precision="ieee")
+            x_end = x_hat - tl.dot(dcoef, uu, input_precision="ieee")
             dtot = 0.5 * e_sh * tl.sum(gs_out * x_end + gs_hat * s_in, axis=1)
             tl.store(dtot_ptr + (bh * NC + chunk) * BK + koff + off_kb, dtot)
 
-            gqt = tl.dot(go_hat, tl.trans(s_hat), input_precision="tf32") + tl.dot(
-                gaq, ak, input_precision="tf32"
+            gqt = tl.dot(go_hat, tl.trans(s_hat), input_precision="ieee") + tl.dot(
+                gaq, ak, input_precision="ieee"
             )
             tl.store(dqt_ptr + base_k, gqt, mask=m_t[:, None])
             tl.store(
                 dp_ptr + base_k,
-                -tl.dot(gh, tl.trans(s_hat), input_precision="tf32"),
+                -tl.dot(gh, tl.trans(s_hat), input_precision="ieee"),
                 mask=m_t[:, None],
             )
 
@@ -443,34 +448,34 @@ def _bpre_kernel(
     c_key = kk * exp_rel
     q_tilde = qq * exp_rel
 
-    gram_u = tl.dot(uu, tl.trans(uu), input_precision="tf32")
+    gram_u = tl.dot(uu, tl.trans(uu), input_precision="ieee")
     delta = gamma / (1.0 - gamma)
-    muv = tl.dot(uu, tl.trans(vv), input_precision="tf32")
+    muv = tl.dot(uu, tl.trans(vv), input_precision="ieee")
     b_alpha = tl.where(upper, delta[:, None] * muv, 0.0)
     alpha_op = _series_sum(delta[:, None] * tl.where(strict_upper, gram_u, 0.0), BT, STEPS)
-    alpha = tl.dot(alpha_op, b_alpha, input_precision="tf32")
-    v_hat = vv + tl.dot(tl.trans(alpha), uu, input_precision="tf32")
+    alpha = tl.dot(alpha_op, b_alpha, input_precision="ieee")
+    v_hat = vv + tl.dot(tl.trans(alpha), uu, input_precision="ieee")
 
-    ka = tl.dot(c_key, tl.trans(a_key), input_precision="tf32")
+    ka = tl.dot(c_key, tl.trans(a_key), input_precision="ieee")
     left_op = _series_sum(-(beta[:, None] * tl.where(strict_lower, ka, 0.0)), BT, STEPS)
     mb = left_op * beta[None, :]
     out_op = _series_sum(-(gamma[:, None] * tl.where(strict_lower, gram_u, 0.0)), BT, STEPS)
     end_op = _series_sum(-(tl.where(strict_upper, gram_u, 0.0) * gamma[None, :]), BT, STEPS)
 
     # ---- folded operator mb = left_op @ diag(beta) ----
-    gmb = tl.dot(gdp, tl.trans(c_key), input_precision="tf32") + tl.dot(
-        gdh0, tl.trans(v_hat), input_precision="tf32"
+    gmb = tl.dot(gdp, tl.trans(c_key), input_precision="ieee") + tl.dot(
+        gdh0, tl.trans(v_hat), input_precision="ieee"
     )
-    gc = tl.dot(tl.trans(mb), gdp, input_precision="tf32")
-    gv_hat = tl.dot(tl.trans(mb), gdh0, input_precision="tf32")
+    gc = tl.dot(tl.trans(mb), gdp, input_precision="ieee")
+    gv_hat = tl.dot(tl.trans(mb), gdh0, input_precision="ieee")
     gleft = gmb * beta[None, :]
     dbeta = tl.sum(gmb * left_op, axis=0)
 
     gn = tl.where(strict_lower, _series_grad(left_op, gleft), 0.0)
     gka = -beta[:, None] * gn
     dbeta += tl.sum(gn * (-tl.where(strict_lower, ka, 0.0)), axis=1)
-    gc += tl.dot(gka, a_key, input_precision="tf32")
-    ga = gda + tl.dot(tl.trans(gka), c_key, input_precision="tf32")
+    gc += tl.dot(gka, a_key, input_precision="ieee")
+    ga = gda + tl.dot(tl.trans(gka), c_key, input_precision="ieee")
 
     # ---- triangular operators on the Gram matrix ----
     ggram = tl.zeros([BT, BT], dtype=tl.float32)
@@ -483,21 +488,21 @@ def _bpre_kernel(
 
     # ---- vhat / alpha ----
     gv = gv_hat
-    galpha = tl.dot(uu, tl.trans(gv_hat), input_precision="tf32")
-    gu += tl.dot(alpha, gv_hat, input_precision="tf32")
-    gb_alpha = tl.dot(tl.trans(alpha_op), galpha, input_precision="tf32")
-    galpha_op = tl.dot(galpha, tl.trans(b_alpha), input_precision="tf32")
+    galpha = tl.dot(uu, tl.trans(gv_hat), input_precision="ieee")
+    gu += tl.dot(alpha, gv_hat, input_precision="ieee")
+    gb_alpha = tl.dot(tl.trans(alpha_op), galpha, input_precision="ieee")
+    galpha_op = tl.dot(galpha, tl.trans(b_alpha), input_precision="ieee")
     gn = tl.where(strict_upper, _series_grad(alpha_op, galpha_op), 0.0)
     ggram += delta[:, None] * gn
     ddelta = tl.sum(gn * tl.where(strict_upper, gram_u, 0.0), axis=1)
     gb = tl.where(upper, gb_alpha, 0.0)
     ddelta += tl.sum(gb * muv, axis=1)
     gmuv = gb * delta[:, None]
-    gu += tl.dot(gmuv, vv, input_precision="tf32")
-    gv += tl.dot(tl.trans(gmuv), uu, input_precision="tf32")
+    gu += tl.dot(gmuv, vv, input_precision="ieee")
+    gv += tl.dot(tl.trans(gmuv), uu, input_precision="ieee")
     dgamma += ddelta / ((1.0 - gamma) * (1.0 - gamma))
 
-    gu += tl.dot(ggram + tl.trans(ggram), uu, input_precision="tf32")
+    gu += tl.dot(ggram + tl.trans(ggram), uu, input_precision="ieee")
 
     # ---- decay rescaling and reverse cumulative sum ----
     grel = gc * c_key + gdqt * q_tilde - ga * a_key
@@ -506,7 +511,7 @@ def _bpre_kernel(
     gtotal = 0.5 * gshift + gdtot
     gcum += tl.where(off_t[:, None] == rem - 1, gtotal[None, :], 0.0)
     ones_upper = tl.where(upper, 1.0, 0.0).to(tl.float32)
-    dg_tile = tl.dot(ones_upper, gcum, input_precision="tf32")
+    dg_tile = tl.dot(ones_upper, gcum, input_precision="ieee")
 
     tl.store(dq_ptr + base_k, gdqt * exp_rel, mask=m_t[:, None])
     tl.store(dk_ptr + base_k, ga * exp_nrel + gc * exp_rel, mask=m_t[:, None])
@@ -703,8 +708,25 @@ class _LayerFn(torch.autograd.Function):
         out_ = torch.empty((BH, T, BV), device=dev, dtype=torch.float32)
 
         # The chunk transform divides by (1 - gamma) and exponentiates the
-        # cumulative decay, so use it only where it is well conditioned;
-        # everything else goes to the recurrent kernels.
+        # cumulative decay, so use it only where it is well conditioned.
+        #
+        # Diagnosis of the gate_typical failures: the previous version
+        # still sent gamma in (0.5, 0.99] through the chunk transform
+        # (at BT=16).  That assumption is invalid in this regime.  The
+        # transform represents the state through P_i^-1 / P_i^-T, where
+        # P_i is a product of erase factors (I - gamma u u^T); for
+        # gamma > 0.5 (delta = gamma/(1-gamma) > 1) with slow decay the
+        # transformed values vhat / Shat are formed by repeatedly
+        # applying those inverses and then cancelling them again against
+        # P_i, so the intermediates are exponentially larger than the
+        # true state and small errors are amplified to O(1) -- an
+        # inherent conditioning failure of the representation, not of
+        # dot-product rounding (the failures were unchanged when the
+        # products were moved to full fp32 and the chunk was halved).
+        # Inputs with gamma > 0.5 therefore use the direct recurrent
+        # kernels, which never form P_i^-1; the chunk path is retained
+        # only for gamma <= 0.5, where (I - gamma u u^T) contracts by at
+        # most a factor 1/2 per erase and the representation is stable.
         use_chunk = False
         BT = 32
         if BK <= 128 and BV <= 128:
@@ -712,10 +734,8 @@ class _LayerFn(torch.autograd.Function):
             ga_lo, ga_hi = (float(x) for x in gamma.aminmax())
             g_lo, g_hi = (float(x) for x in g.aminmax())
             if 0.0 <= b_lo and b_hi <= 1.0 and 0.0 <= ga_lo and g_hi <= 0.0 and g_lo >= -30.0:
-                if ga_hi <= 0.90 and 32.0 * abs(g_lo) <= 40.0:
+                if ga_hi <= 0.50 and 32.0 * abs(g_lo) <= 40.0:
                     BT, use_chunk = 32, True
-                elif ga_hi <= 0.99 and 16.0 * abs(g_lo) <= 40.0:
-                    BT, use_chunk = 16, True
 
         ctx.B, ctx.H, ctx.T, ctx.K, ctx.V = B, H, T, K, V
         ctx.BK, ctx.BV = BK, BV

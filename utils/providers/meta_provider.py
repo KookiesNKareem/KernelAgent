@@ -2,8 +2,12 @@
 
 from typing import Any
 
+from dotenv import load_dotenv
+
 from .base import LLMResponse
 from .openai_base import OpenAICompatibleProvider
+
+load_dotenv()
 
 REASONING_EFFORTS = ("minimal", "low", "medium", "high", "xhigh")
 

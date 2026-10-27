@@ -222,6 +222,18 @@ class Run:
                 best = (new, nres)
         return best
 
+    def replay(self, upto: int):
+        """Rebuild the conversation from a previous run's first `upto` calls."""
+        events = [json.loads(x) for x in (self.out / "events.jsonl").read_text().splitlines()]
+        prompts = [e["prompt"] for e in events if e["event"] == "llm_start"]
+        for i, text in enumerate(prompts[:upto], 1):
+            md = next(self.out.glob(f"{i:02d}_*.md"))
+            self.messages += [{"role": "user", "content": text}, {"role": "assistant", "content": md.read_text()}]
+        self.n = upto
+        for f in list(self.out.glob("*.py")) + list(self.out.glob("*.md")):
+            if int(f.name[:2]) > upto:
+                f.unlink()
+
     def go(self):
         L = dict(LAYERS[self.a.layer])
         L["eager_ms"] = self.a.eager_ms or L["eager_ms"]

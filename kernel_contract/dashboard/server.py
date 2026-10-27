@@ -37,7 +37,7 @@ def preamble(layer: str | None, baseline: Path | None, kernel_train: Path | None
     return out
 
 
-def make_handler(events: Path, replay: float | None, pre: list[str] = ()):
+def make_handler(events: Path, replay: float | None, pre: list[str] = (), model: str | None = None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *a):
             pass
@@ -64,6 +64,11 @@ def make_handler(events: Path, replay: float | None, pre: list[str] = ()):
                 pass
 
         def _send(self, line: str):
+            if model and '"llm_done"' in line:  # older logs lack per-call cost: price their usage
+                from ..paper_agent import usage_cost
+                e = json.loads(line)
+                e.setdefault("usd", usage_cost(model, e.get("usage")))
+                line = json.dumps(e)
             self.wfile.write(f"data: {line}\n\n".encode())
             self.wfile.flush()
 
@@ -105,9 +110,10 @@ def main():
     ap.add_argument("--replay", type=float, default=None, help="replay a finished run at this speed")
     ap.add_argument("--layer", help="layer module whose equation the recurrence page shows")
     ap.add_argument("--baseline", type=Path, help="reference-loop training log (jsonl) to plot against")
+    ap.add_argument("--model", help="model id, to price the usage in older logs")
     ap.add_argument("--kernel-train", type=Path, help="the kernel's training log, when replaying a paper-agent run")
     a = ap.parse_args()
-    srv = ThreadingHTTPServer(("127.0.0.1", a.port), make_handler(a.events, a.replay, preamble(a.layer, a.baseline, a.kernel_train)))
+    srv = ThreadingHTTPServer(("127.0.0.1", a.port), make_handler(a.events, a.replay, preamble(a.layer, a.baseline, a.kernel_train), a.model))
     print(f"http://127.0.0.1:{a.port}" + ("/recur" if a.layer else ""), flush=True)
     srv.serve_forever()
 

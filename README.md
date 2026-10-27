@@ -23,11 +23,13 @@ by an independent contract the model does not control.
 
 | Layer | Writer | Forward | Fwd+bwd | Slow loop fwd / fwd+bwd | Best existing route fwd / fwd+bwd | Model cost |
 |---|---|---|---|---|---|---|
-| Gated delta rule (calibration) | Muse Wonder | 1.65 ms | 16.2 ms | 361 / 3551 ms | FLA 1.53 / 5.7 ms | $3.50 |
-| Scalar-decay EDA (arXiv 2606.26560) | Muse Wonder | 2.16 ms | 32.2 ms | 220 / 4540 ms | FLA interleave 4.21 / 12.1 ms | ~$3 |
-| Variant written before any model saw it (`6c22865`) | Muse Wonder | 5.87 ms | 23.6 ms | 500 / 6064 ms | KDA interleave 8.27 / 22.4 ms | $2.60 |
+| Gated delta rule (calibration) | Muse Wonder | 1.65 ms | 16.2 ms | 361 / 3551 ms | FLA 1.53 / 5.7 ms | $2.68 |
+| Scalar-decay EDA (arXiv 2606.26560) | Muse Wonder | 2.16 ms | 32.2 ms | 220 / 4540 ms | FLA interleave 4.21 / 12.1 ms | $3.94 |
+| Variant written before any model saw it (`6c22865`) | Muse Wonder | 5.87 ms | 23.6 ms | 500 / 6064 ms | KDA interleave 8.27 / 22.4 ms | $3.19 |
 | Same variant | Muse Spark Open | 11.0 ms | 397 ms | 500 / 6064 ms | KDA interleave 8.27 / 22.4 ms | $0.96 |
-| Value-side erase, two-sided (`e66fffc`) | Muse Wonder | recurrent path | 124 ms | 220 / 5371 ms | none (no key-side reduction) | ~$7 |
+| Value-side erase, two-sided (`e66fffc`) | Muse Wonder | recurrent path | 124 ms | 220 / 5371 ms | none (no key-side reduction) | $6.64 |
+
+Model cost is priced from each run's own token usage, including truncated and repair calls.
 
 Warm `torch.compile` of the slow loop: gated delta rule forward 37.4 ms after 24 minutes of compiling;
 EDA forward 83 ms after 43 minutes.

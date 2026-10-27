@@ -213,6 +213,14 @@ def profile_text(res: dict) -> str:
     return "\n".join(f"- {p['kernel']}: {p['ms_per_step']:.3f} ms" for p in res.get("profile", []) if p["ms_per_step"] > 0)
 
 
+def usage_cost(model: str, usage: dict | None) -> float:
+    price_in, price_cached, price_out = next(v for k, v in META_PRICES.items() if model.startswith(k))
+    usage = usage or {}
+    cached = (usage.get("prompt_tokens_details") or {}).get("cached_tokens") or 0
+    return ((usage.get("prompt_tokens", 0) - cached) * price_in + cached * price_cached
+            + usage.get("completion_tokens", 0) * price_out) / 1e6
+
+
 class Run:
     def __init__(self, a):
         self.a, self.out = a, Path(a.out)
@@ -220,6 +228,7 @@ class Run:
         self.provider = get_model_provider(a.model)
         self.messages: list[dict] = []
         self.start_usd = spent(self.provider.ledger)
+        self.cost = 0.0  # priced from this run's own usage; the shared ledger also moves with parallel runs
         self.n = 0
         self.last_path: Path | None = None
 
@@ -231,7 +240,7 @@ class Run:
 
     def ask(self, text: str, tag: str) -> Path:
         price_out = next(v[2] for k, v in META_PRICES.items() if self.a.model.startswith(k))
-        if spent(self.provider.ledger) - self.start_usd + self.a.max_tokens * price_out / 1e6 > self.a.max_usd:
+        if self.cost + self.a.max_tokens * price_out / 1e6 > self.a.max_usd:
             raise SystemExit(f"run budget ${self.a.max_usd} reached")
         self.messages.append({"role": "user", "content": text})
         self.log(event="llm_start", tag=tag, prompt=text)
@@ -239,6 +248,8 @@ class Run:
         resp = self.provider.get_response(self.a.model, self.messages, max_tokens=self.a.max_tokens,
                                           reasoning_effort=self.a.effort)
         self.messages.append({"role": "assistant", "content": resp.content})
+        call_usd = usage_cost(self.a.model, resp.usage)
+        self.cost += call_usd
         self.n += 1
         path = self.out / f"{self.n:02d}_{tag}.py"
         try:
@@ -247,8 +258,8 @@ class Run:
             path.write_text("def kernel_function(*a, **k):\n    raise RuntimeError('model returned no code')\n")
         (self.out / f"{self.n:02d}_{tag}.md").write_text(resp.content)
         self.last_path = path
-        self.log(event="llm_done", tag=tag, path=str(path), seconds=time.time() - t0, usage=resp.usage,
-                 run_usd=spent(self.provider.ledger) - self.start_usd)
+        self.log(event="llm_done", tag=tag, path=str(path), seconds=time.time() - t0, usage=resp.usage, usd=call_usd,
+                 run_usd=self.cost)
         return path
 
     def evaluate(self, path: Path, grads: bool) -> dict:
@@ -326,7 +337,7 @@ class Run:
             path, res = self.until_correct(path, res, self.a.grads, self.a.repairs,
                                            "backward" if self.a.grads else "kernel")
             return self.log(event="done", stage="repair", ok=not res["blocking"], path=str(path), ms=res.get("ms"),
-                            run_usd=spent(self.provider.ledger) - self.start_usd)
+                            run_usd=self.cost)
         if self.a.resume_bwd:
             self.replay(self.a.resume_bwd)
             path = next(self.out.glob(f"{self.a.resume_bwd:02d}_*.py"))
@@ -336,7 +347,7 @@ class Run:
         res = self.evaluate(path, False)
         path, res = self.until_correct(path, res, False, self.a.repairs, "kernel")
         if res["blocking"]:
-            return self.log(event="done", stage="forward", ok=False, run_usd=spent(self.provider.ledger) - self.start_usd)
+            return self.log(event="done", stage="forward", ok=False, run_usd=self.cost)
         path, res = self.optimize(path, res, False, self.a.opt_rounds, 1.54)
         self.log(event="forward_final", path=str(path), ms=res["ms"])
         self.backward(L, path, res)
@@ -348,7 +359,7 @@ class Run:
         if not bres["blocking"]:
             bpath, bres = self.optimize(bpath, bres, True, self.a.bwd_opt_rounds, 5.36)
         self.log(event="done", stage="backward", ok=not bres["blocking"], forward=str(path), forward_ms=res["ms"],
-                 backward=str(bpath), fwd_bwd_ms=bres.get("ms"), calls=self.n, run_usd=spent(self.provider.ledger) - self.start_usd)
+                 backward=str(bpath), fwd_bwd_ms=bres.get("ms"), calls=self.n, run_usd=self.cost)
 
 
 def main():

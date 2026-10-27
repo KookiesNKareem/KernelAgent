@@ -121,7 +121,7 @@
 </main>
 <script>
 const $ = id => document.getElementById(id);
-const st = { last: null, active: 0, cases: [], rows: [], cost: 0, runCost: 0, base: null, kernel: null };
+const st = { last: null, active: 0, cases: [], rows: [], cost: 0, base: null, kernel: null };
 
 function renderRows() {
   $("axis-cases").textContent = `${st.cases.length} cases: seeds, value ranges, sizes, layouts, gates, workload shapes`;
@@ -247,12 +247,7 @@ function handle(ev) {
     case "baseline":
       st.base = ev; drawChart(); drawBars(); break;
     case "llm_done":
-      if (ev.run_usd != null) {
-        // run_usd is per agent run and restarts at zero when a new run (such as a repair) begins
-        if (ev.run_usd < st.runCost) st.cost += st.runCost;
-        st.runCost = ev.run_usd;
-        $("s-cost").textContent = `$${(st.cost + st.runCost).toFixed(2)}`;
-      }
+      if (ev.usd != null) { st.cost += ev.usd; $("s-cost").textContent = `$${st.cost.toFixed(2)}`; }
       break;
     case "check_start":
       $("state").textContent = "checking against the float64 reference on the GPU";

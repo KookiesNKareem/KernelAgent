@@ -71,7 +71,7 @@ def main(job: str):
             kernel = job / "kernel.py"
             kernel.write_text(Path(done["backward"]).read_text())
             last = next(e for e in reversed(events) if e["event"] == "eval" and e["path"] == done["backward"])
-            status(job, state="ready", kernel=str(kernel), fwd_bwd_ms=done.get("fwd_bwd_ms"), usd=usd,
+            status(job, state="ready", kernel=kernel.name, fwd_bwd_ms=done.get("fwd_bwd_ms"), usd=usd,
                    verified_cases=sum(r["outcome"] == "accept" for r in last["results"]), cases=len(last["results"]))
         else:
             status(job, state="failed", usd=usd, reason="no kernel passed the checker within the budget")

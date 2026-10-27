@@ -1,0 +1,23 @@
+{
+ "hash": "55f24fcd745cb06e",
+ "name": "gated_delta",
+ "source": "@muse_kernel.fast\ndef gated_delta(q, k, v, g, beta, scale):\n    B, H, T, K = q.shape\n    S = q.new_zeros(B, H, K, v.shape[-1]).float()\n    outs = []\n    for t in range(T):\n        S = S * g[:, :, t].float().exp()[..., None, None]\n        kt = k[:, :, t].float()\n        pred = (S * kt[..., None]).sum(-2)\n        S = S + (beta[:, :, t].float()[..., None] * (v[:, :, t].float() - pred))[..., None, :] * kt[..., None]\n        outs.append((S * (q[:, :, t].float() * scale)[..., None]).sum(-2))\n    return torch.stack(outs, dim=2)\n",
+ "signature": "q, k, v, g, beta, scale",
+ "call": "muse_jobs.j_55f24fcd745cb06e.gated_delta(Tensor(shape=[2, 4, 512, 128], dtype=bfloat16, contiguous), Tensor(shape=[2, 4, 512, 128], dtype=bfloat16, contiguous), Tensor(shape=[2, 4, 512, 128], dtype=bfloat16, contiguous), Tensor(shape=[2, 4, 512], dtype=float32, contiguous), Tensor(shape=[2, 4, 512], dtype=float32, contiguous), 0.08838834764831845)",
+ "sizes": {
+  "s0": 4,
+  "s1": 512,
+  "s2": 128
+ },
+ "domains": [
+  "k has unit-norm rows (L2 over the last dimension)",
+  "g is <= 0 (a log decay)",
+  "beta lies in [0, 1]"
+ ],
+ "verified_signatures": [
+  "(((2, 4, 512, 128), 'torch.bfloat16'), ((2, 4, 512, 128), 'torch.bfloat16'), ((2, 4, 512, 128), 'torch.bfloat16'), ((2, 4, 512), 'torch.float32'), ((2, 4, 512), 'torch.float32'), 0.08838834764831845)"
+ ],
+ "model": "muse-spark-1.3-contributor",
+ "max_usd": 1.0,
+ "eager_ms": 110.6792010832578
+}

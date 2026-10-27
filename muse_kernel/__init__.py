@@ -154,10 +154,15 @@ class Fast:
         if s.get("state") != "ready":
             return
         job = json.loads((self.job / "job.json").read_text())
-        spec_mod = importlib.util.spec_from_file_location(f"muse_kernel_{self.hash}", s["kernel"])
-        mod = importlib.util.module_from_spec(spec_mod)
-        spec_mod.loader.exec_module(mod)
-        self.kernel = mod.kernel_function
+        try:  # the cache may be committed and loaded on a machine without a GPU or Triton
+            spec_mod = importlib.util.spec_from_file_location(f"muse_kernel_{self.hash}",
+                                                              self.job / Path(s["kernel"]).name)
+            mod = importlib.util.module_from_spec(spec_mod)
+            spec_mod.loader.exec_module(mod)
+            self.kernel = mod.kernel_function
+        except Exception as e:
+            self.stats[f"cached kernel unavailable: {type(e).__name__}"] += 1
+            return
         self.verified = [eval(x, {"torch": torch}) for x in job["verified_signatures"]]
         self.domains = {int(i): d for i, d in json.loads((self.job / "domains.json").read_text()).items()} \
             if (self.job / "domains.json").exists() else self._domains_from_spec()

@@ -1,0 +1,11 @@
+{
+ "state": "ready",
+ "updated": 1793081244.2008762,
+ "started": 1793080033.4994657,
+ "reference_ms": 110.6792010832578,
+ "kernel": "kernel.py",
+ "fwd_bwd_ms": 8.202985406387597,
+ "usd": 0.026164796000000004,
+ "verified_cases": 29,
+ "cases": 29
+}

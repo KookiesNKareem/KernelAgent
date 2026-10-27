@@ -50,11 +50,32 @@ class Mixer(nn.Module):
         return self.out(o.float().transpose(1, 2).reshape(B, T, h * dh))
 
 
+class TriadicMixer(nn.Module):
+    """Triadic Gated DeltaNet's inputs: a second unit-norm key and query of width E and one forget gate per slice."""
+
+    def __init__(self, d, heads, head_dim, fn, n_e):
+        super().__init__()
+        self.h, self.dh, self.ne, self.fn = heads, head_dim, n_e, fn
+        self.proj = nn.Linear(d, 3 * heads * head_dim + 3 * heads * n_e + heads, bias=False)
+        self.out = nn.Linear(heads * head_dim, d, bias=False)
+
+    def forward(self, x):
+        B, T, _ = x.shape
+        h, dh, ne = self.h, self.dh, self.ne
+        q, k, v, q2, k2, a, b = self.proj(x).split([h * dh] * 3 + [h * ne] * 3 + [h], dim=-1)
+        q, k, v = (t.view(B, T, h, dh).transpose(1, 2) for t in (q, k, v))
+        q2, k2, a = (t.view(B, T, h, ne).transpose(1, 2) for t in (q2, k2, a))
+        q, k, q2, k2 = (F.normalize(t.float(), dim=-1).to(torch.bfloat16) for t in (q, k, q2, k2))
+        g, beta = F.logsigmoid(a.float() + 3), b.float().transpose(1, 2).sigmoid()
+        o = self.fn(q, k, v.to(torch.bfloat16), q2, k2, g, beta, dh ** -0.5)
+        return self.out(o.float().transpose(1, 2).reshape(B, T, h * dh))
+
+
 class Block(nn.Module):
-    def __init__(self, d, heads, head_dim, fn, channel_decay):
+    def __init__(self, d, heads, head_dim, fn, channel_decay, n_e=None):
         super().__init__()
         self.n1, self.n2 = nn.RMSNorm(d), nn.RMSNorm(d)
-        self.mix = Mixer(d, heads, head_dim, fn, channel_decay)
+        self.mix = TriadicMixer(d, heads, head_dim, fn, n_e) if n_e else Mixer(d, heads, head_dim, fn, channel_decay)
         self.up = nn.Linear(d, 8 * d, bias=False)
         self.down = nn.Linear(4 * d, d, bias=False)
 
@@ -65,10 +86,10 @@ class Block(nn.Module):
 
 
 class LM(nn.Module):
-    def __init__(self, fn, d=512, layers=4, heads=4, head_dim=128, channel_decay=True):
+    def __init__(self, fn, d=512, layers=4, heads=4, head_dim=128, channel_decay=True, n_e=None):
         super().__init__()
         self.emb = nn.Embedding(256, d)
-        self.blocks = nn.ModuleList(Block(d, heads, head_dim, fn, channel_decay) for _ in range(layers))
+        self.blocks = nn.ModuleList(Block(d, heads, head_dim, fn, channel_decay, n_e) for _ in range(layers))
         self.norm = nn.RMSNorm(d)
         nn.init.normal_(self.emb.weight, std=0.02)
         for b in self.blocks:
@@ -94,6 +115,11 @@ def layer_module(layer):
     return LAYERS[layer] if layer in LAYERS else importlib.import_module(layer)
 
 
+def make_lm(layer, fn):
+    mod = layer_module(layer)
+    return LM(fn, channel_decay=getattr(mod, "CHANNEL_DECAY", True), n_e=getattr(mod, "E", None)).cuda()
+
+
 def mixer_fn(layer, mixer):
     mod = layer_module(layer)
     if mixer == "reference":
@@ -102,6 +128,9 @@ def mixer_fn(layer, mixer):
         return mod.fla_reduction
     if mixer == "compiled":
         return torch.compile(mod.reference)
+    if mixer == "checkpointed":  # the standard memory fix: keep only the inputs, recompute the loop in backward
+        from torch.utils.checkpoint import checkpoint
+        return lambda *a: checkpoint(mod.reference, *a, use_reentrant=False)
     return load_kernel(Path(mixer))
 
 
@@ -123,7 +152,7 @@ def grad_check(layer, path, batch_size, seq):
     grads = {}
     for name, fn in (("reference", mixer_fn(layer, "reference")), ("kernel", mixer_fn(layer, path))):
         torch.manual_seed(0)
-        model = LM(fn, channel_decay=getattr(layer_module(layer), "CHANNEL_DECAY", True)).cuda()
+        model = make_lm(layer, fn)
         loss = loss_of(model, x)
         loss.backward()
         grads[name] = (loss.item(), {n: p.grad.float() for n, p in model.named_parameters()})
@@ -148,7 +177,7 @@ def main():
     if a.grad_check:
         return grad_check(a.layer, a.grad_check, a.batch, a.seq)
     torch.manual_seed(0)
-    model = LM(mixer_fn(a.layer, a.mixer), channel_decay=getattr(layer_module(a.layer), "CHANNEL_DECAY", True)).cuda()
+    model = make_lm(a.layer, mixer_fn(a.layer, a.mixer))
     opt = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.0)
     ids = data("cuda")
     split = int(len(ids) * 0.9)
@@ -160,9 +189,15 @@ def main():
             x = batch(train, a.batch, a.seq, gen)
             torch.cuda.synchronize()
             t0 = time.perf_counter()
-            loss = loss_of(model, x)
-            opt.zero_grad(set_to_none=True)
-            loss.backward()
+            try:
+                loss = loss_of(model, x)
+                opt.zero_grad(set_to_none=True)
+                loss.backward()
+            except torch.OutOfMemoryError:
+                rec = {"step": step, "out_of_memory": True, "gpu_gb": torch.cuda.get_device_properties(0).total_memory / 1e9}
+                f.write(json.dumps(rec) + "\n")
+                print(json.dumps(rec), flush=True)
+                return
             gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
             torch.cuda.synchronize()

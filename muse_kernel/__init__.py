@@ -11,7 +11,9 @@ value ranges, and starts a background build. Once a forward+backward kernel pass
 shapes, dtypes and values match what was verified go to the kernel; everything else still runs the function.
 Builds are cached by the function's source, so editing the equation triggers a new build automatically.
 
-Settings (environment): MUSE_KERNEL_MODEL (default muse-wonder-1.0), MUSE_KERNEL_MAX_USD (default 4 per build; spend is tallied on the machine that runs the build),
+Settings (environment): MUSE_KERNEL_MODEL (comma-separated models tried in order, each continuing from the last
+one's verified forward or counterexamples; default Spark 1.3 Contributor, then Wonder), MUSE_KERNEL_MAX_USD
+(default 4 per model; spend is tallied on the machine that runs the build),
 MUSE_KERNEL_CACHE (default .muse_kernels/ next to the source file; commit it to share kernels), MUSE_KERNEL_REMOTE / MUSE_KERNEL_REMOTE_DIR to check
 kernels on another GPU host (default: this machine).
 """
@@ -35,6 +37,9 @@ import torch
 from .infer import NORM_TOL, describe_domains, merge_domains, observe, source_hash, standalone_module
 
 __all__ = ["fast"]
+
+# the cheap model verifies as often as Wonder on our benchmark at ~1/100 the cost; Wonder takes over on failure
+DEFAULT_MODELS = "muse-spark-1.3-contributor,muse-wonder-1.0"
 
 
 def cache_root(fn) -> Path:
@@ -133,7 +138,7 @@ class Fast:
                "grad_names": ", ".join(n for n, a in zip(names, self.seen[0]["args"])
                                        if isinstance(a, torch.Tensor) and a.is_floating_point()),
                "domains": describe_domains(self.domains, names), "verified_signatures": [repr(s) for s in sigs],
-               "model": os.environ.get("MUSE_KERNEL_MODEL", "muse-wonder-1.0"),
+               "models": os.environ.get("MUSE_KERNEL_MODEL", DEFAULT_MODELS).split(","),
                "max_usd": float(os.environ.get("MUSE_KERNEL_MAX_USD", 4))}
         (self.job / "job.json").write_text(json.dumps(job, indent=1))
         (self.job / "status.json").write_text(json.dumps({"state": "queued", "updated": time.time()}))

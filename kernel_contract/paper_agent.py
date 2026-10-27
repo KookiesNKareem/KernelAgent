@@ -374,6 +374,8 @@ class Run:
             J = json.loads((Path(self.a.job) / "job.json").read_text())
             JOB_SIZES.update(J["sizes"])
             L = {"signature": J["signature"], "grad_names": J["grad_names"]}
+            if self.a.handoff:
+                return self.take_over(job_prompt(J), L, Path(self.a.handoff))
             path = self.ask(job_prompt(J), "write")
             res = self.evaluate(path, False)
             path, res = self.until_correct(path, res, False, self.a.repairs, "kernel")
@@ -392,6 +394,8 @@ class Run:
                                            "backward" if self.a.grads else "kernel")
             return self.log(event="done", stage="repair", ok=not res["blocking"], path=str(path), ms=res.get("ms"),
                             run_usd=self.cost)
+        if self.a.handoff:
+            return self.take_over(write_prompt(L), L, Path(self.a.handoff))
         if self.a.resume_bwd:
             self.replay(self.a.resume_bwd)
             path = next(self.out.glob(f"{self.a.resume_bwd:02d}_*.py"))
@@ -405,6 +409,28 @@ class Run:
         path, res = self.optimize(path, res, False, self.a.opt_rounds, 1.54)
         self.log(event="forward_final", path=str(path), ms=res["ms"])
         self.backward(L, path, res)
+
+    def take_over(self, first_prompt: str, L: dict, prior: Path):
+        """Continue a cheaper model's failed build: keep its verified forward if it has one, otherwise start from
+        its last candidate and the checker's counterexamples."""
+        evals = [json.loads(x) for x in (prior / "events.jsonl").read_text().splitlines()]
+        evals = [e for e in evals if e["event"] == "eval"]
+        fwd = [e for e in evals if not e["grads"] and not e["blocking"] and e.get("ms")]
+        start = min(fwd, key=lambda e: e["ms"]) if fwd else evals[-1]
+        path = self.out / "00_handoff.py"
+        path.write_text(Path(start["path"]).read_text())
+        self.messages += [{"role": "user", "content": first_prompt},
+                          {"role": "assistant", "content": f"```python\n{path.read_text()}\n```"}]
+        self.last_path = path
+        self.log(event="handoff", prior=str(prior), path=str(path), forward_verified=bool(fwd))
+        res = self.evaluate(path, False)
+        if res["blocking"]:
+            path, res = self.until_correct(path, res, False, self.a.repairs, "kernel")
+            if res["blocking"]:
+                return self.log(event="done", stage="forward", ok=False, run_usd=self.cost)
+            path, res = self.optimize(path, res, False, self.a.opt_rounds, 0)
+        self.log(event="forward_final", path=str(path), ms=res["ms"])
+        return self.backward(L, path, res)
 
     def backward(self, L, path, res):
         bpath = self.ask(self.anchor(path) + backward_prompt(L), "bwd")
@@ -434,6 +460,7 @@ def main():
     ap.add_argument("--remote-job", help="that build's directory on the GPU host")
     ap.add_argument("--repair-from", type=int, help="replay the first N calls of --out and repair call N")
     ap.add_argument("--grads", action="store_true")
+    ap.add_argument("--handoff", help="a cheaper model's failed run directory to continue from")
     ap.add_argument("--resume-bwd", type=int, help="replay the first N calls of --out, take call N as the forward")
     Run(ap.parse_args()).go()
 

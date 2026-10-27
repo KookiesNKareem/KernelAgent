@@ -78,6 +78,19 @@ route refuses it ("only support key headdim <=256 for KDA, got 512"), and the sl
 All three pass the full suite, gradients included. The released kernels are
 `kernel_contract/recur_cands/triadic_gdn_*.py`; transcripts are in `runs_public/triadic/`.
 
+**Training with it** (the byte-level LM above with Triadic GDN as its mixer, 4 layers, batch 8 x 512):
+
+| Mixer | Step time | Peak memory | Val loss after 300 steps |
+|---|---|---|---|
+| Slow reference loop | out of memory on the 22 GB L4 | | |
+| Same loop with gradient checkpointing | 2571 ms | 9.5 GB | |
+| Muse Wonder kernel | 165 ms | 1.2 GB | 1.744 |
+
+The kernel trains 15.6x faster than the checkpointed loop with an eighth of the memory. At a size where the
+plain loop fits (batch 2 x 256), the two match from the same init and batches: every parameter gradient
+agrees within 1.3% on step one (median 0.6%), validation loss is 2.536 vs 2.535 at step 25 and 2.136 vs 2.158
+at step 150, and the kernel step takes 28.8 ms against 690 ms. Logs are in `runs_public/train_triadic/`.
+
 ## Benchmark: 12 recurrent layers, three Meta models
 
 Twelve layers (`kernel_contract/layers/b01_gdr.py` ... `b12_two_sided.py`), each checked against its matrix

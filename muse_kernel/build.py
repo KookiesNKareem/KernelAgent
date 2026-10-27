@@ -58,23 +58,32 @@ def main(job: str):
         J["eager_ms"] = float(next(x for x in p.stdout.decode().splitlines() if x.startswith("REFERENCE_MS")).split()[1])
         (job / "job.json").write_text(json.dumps(J, indent=1))
         status(job, reference_ms=J["eager_ms"])
-        cmd = [sys.executable, "-m", "kernel_contract.paper_agent", "--job", str(job), "--remote-job", rjob,
-               "--model", J["model"], "--max-usd", str(J["max_usd"]), "--out", str(job / "run"),
-               "--remote", " ".join(shlex.quote(x) for x in remote_prefix()), "--remote-dir", remote_dir(),
-               "--opt-rounds", "1", "--bwd-opt-rounds", "1"]
-        with open(job / "build.log", "w") as log:
-            subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, cwd=ROOT)
-        events = [json.loads(x) for x in (job / "run" / "events.jsonl").read_text().splitlines()]
-        done = next((e for e in reversed(events) if e["event"] == "done"), None)
-        usd = sum(e.get("usd", 0) for e in events if e["event"] == "llm_done")
-        if done and done.get("ok") and done.get("backward"):
-            kernel = job / "kernel.py"
-            kernel.write_text(Path(done["backward"]).read_text())
-            last = next(e for e in reversed(events) if e["event"] == "eval" and e["path"] == done["backward"])
-            status(job, state="ready", kernel=kernel.name, fwd_bwd_ms=done.get("fwd_bwd_ms"), usd=usd,
-                   verified_cases=sum(r["outcome"] == "accept" for r in last["results"]), cases=len(last["results"]))
-        else:
-            status(job, state="failed", usd=usd, reason="no kernel passed the checker within the budget")
+        usd, prior = 0.0, None
+        for i, model in enumerate(J.get("models") or [J["model"]]):
+            run = job / ("run" if i == 0 else f"run{i + 1}")
+            status(job, model=model, attempt=i + 1)
+            cmd = [sys.executable, "-m", "kernel_contract.paper_agent", "--job", str(job), "--remote-job", rjob,
+                   "--model", model, "--max-usd", str(J["max_usd"]), "--out", str(run),
+                   "--remote", " ".join(shlex.quote(x) for x in remote_prefix()), "--remote-dir", remote_dir(),
+                   "--opt-rounds", "1", "--bwd-opt-rounds", "1"]
+            if prior is not None:  # the next model inherits the verified forward or the counterexamples
+                cmd += ["--handoff", str(prior)]
+            with open(job / "build.log", "a") as log:
+                subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, cwd=ROOT)
+            events = [json.loads(x) for x in (run / "events.jsonl").read_text().splitlines()] \
+                if (run / "events.jsonl").exists() else []
+            usd += sum(e.get("usd", 0) for e in events if e["event"] == "llm_done")
+            done = next((e for e in reversed(events) if e["event"] == "done"), None)
+            if done and done.get("ok") and done.get("backward"):
+                kernel = job / "kernel.py"
+                kernel.write_text(Path(done["backward"]).read_text())
+                last = next(e for e in reversed(events) if e["event"] == "eval" and e["path"] == done["backward"])
+                return status(job, state="ready", kernel=kernel.name, model=model, fwd_bwd_ms=done.get("fwd_bwd_ms"),
+                              usd=usd, verified_cases=sum(r["outcome"] == "accept" for r in last["results"]),
+                              cases=len(last["results"]))
+            if any(e["event"] == "eval" for e in events):
+                prior = run
+        status(job, state="failed", usd=usd, reason="no kernel passed the checker within the budget")
     except Exception as e:  # the training run must never be affected by a failed build
         status(job, state="failed", reason=f"{type(e).__name__}: {e}"[:500])
 

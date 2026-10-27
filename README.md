@@ -147,7 +147,7 @@ def my_layer(q, k, v, g, beta, scale):
 ```
 
 Train as usual. After two calls the decorator has seen the real shapes, dtypes and value ranges, writes them
-into a contract, and starts a background build (a Muse model plus the checker above). Once a forward+backward
+into a contract, and starts a background build (Spark 1.3 Contributor plus the checker above, escalating to Wonder if it fails). Once a forward+backward
 kernel passes, calls with a verified shape, dtype and value range go to the kernel; anything else still runs
 your function. Builds are cached next to the source by its hash, so editing the equation triggers a new
 build and a committed cache is reused. On `examples/muse_kernel/smoke.py` (a gated delta rule) the training

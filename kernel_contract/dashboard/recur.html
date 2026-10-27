@@ -121,7 +121,7 @@
 </main>
 <script>
 const $ = id => document.getElementById(id);
-const st = { t0: null, cases: [], rows: [], cost: 0, base: null, kernel: null };
+const st = { last: null, active: 0, cases: [], rows: [], cost: 0, runCost: 0, base: null, kernel: null };
 
 function renderRows() {
   $("axis-cases").textContent = `${st.cases.length} cases: seeds, value ranges, sizes, layouts, gates, workload shapes`;
@@ -230,9 +230,11 @@ function drawBars() {
 }
 
 function handle(ev) {
-  if (ev.t && !st.t0) st.t0 = ev.t;
-  if (ev.t && st.t0) {
-    const s = Math.round(ev.t - st.t0);
+  if (ev.t) {
+    // count only active time: a gap over 15 minutes is a separate session (e.g. a later repair run)
+    if (st.last && ev.t - st.last < 900) st.active += ev.t - st.last;
+    st.last = ev.t;
+    const s = Math.round(st.active);
     $("s-time").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   }
   switch (ev.event) {
@@ -245,7 +247,12 @@ function handle(ev) {
     case "baseline":
       st.base = ev; drawChart(); drawBars(); break;
     case "llm_done":
-      if (ev.run_usd != null) { st.cost = ev.run_usd; $("s-cost").textContent = `$${st.cost.toFixed(2)}`; }
+      if (ev.run_usd != null) {
+        // run_usd is per agent run and restarts at zero when a new run (such as a repair) begins
+        if (ev.run_usd < st.runCost) st.cost += st.runCost;
+        st.runCost = ev.run_usd;
+        $("s-cost").textContent = `$${(st.cost + st.runCost).toFixed(2)}`;
+      }
       break;
     case "check_start":
       $("state").textContent = "checking against the float64 reference on the GPU";

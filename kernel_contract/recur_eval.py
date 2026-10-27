@@ -45,7 +45,12 @@ def profile(kern, grads: bool, inputs) -> list[dict]:
 
 
 def main(path: str, grads: bool, layer: str = "gdr"):
-    make_spec, inputs = LAYERS[layer]
+    if layer in LAYERS:
+        make_spec, inputs = LAYERS[layer]
+    else:  # a module path such as kernel_contract.layers.my_edit, defining reference, inputs and spec
+        import importlib
+        mod = importlib.import_module(layer)
+        make_spec, inputs = mod.spec, mod.inputs
     spec = make_spec()
     spec.flags["check_grads"] = grads
     cases = build_cases(spec)

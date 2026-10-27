@@ -1,5 +1,6 @@
-"""A variant invented for this project, so no paper or kernel for it exists: per-channel decay, then the
-delta-rule write, then an erase along an independent direction that also cleans up the write.
+"""A variant written for this project before any model saw it (close to EDA's per-channel form with the
+erase moved after the write): per-channel decay, then the delta-rule write, then an erase along an
+independent direction that also cleans up the write.
 
     S'  = diag(exp(g_t)) S_{t-1}                  g_t in R^K, <= 0
     S'' = (I - beta_t k_t k_t^T) S' + beta_t k_t v_t^T

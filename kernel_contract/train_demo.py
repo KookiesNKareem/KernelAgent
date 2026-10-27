@@ -89,8 +89,13 @@ def data(device):
     return torch.tensor(list(path.read_bytes()), dtype=torch.long, device=device)
 
 
+def layer_module(layer):
+    import importlib
+    return LAYERS[layer] if layer in LAYERS else importlib.import_module(layer)
+
+
 def mixer_fn(layer, mixer):
-    mod = LAYERS[layer]
+    mod = layer_module(layer)
     if mixer == "reference":
         return mod.reference
     if mixer == "reduction":
@@ -118,7 +123,7 @@ def grad_check(layer, path, batch_size, seq):
     grads = {}
     for name, fn in (("reference", mixer_fn(layer, "reference")), ("kernel", mixer_fn(layer, path))):
         torch.manual_seed(0)
-        model = LM(fn, channel_decay=layer != "eda").cuda()
+        model = LM(fn, channel_decay=getattr(layer_module(layer), "CHANNEL_DECAY", True)).cuda()
         loss = loss_of(model, x)
         loss.backward()
         grads[name] = (loss.item(), {n: p.grad.float() for n, p in model.named_parameters()})
@@ -131,7 +136,7 @@ def grad_check(layer, path, batch_size, seq):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--layer", default="wek", choices=sorted(LAYERS))
+    ap.add_argument("--layer", default="wek", help="eda, wek, vse, or a layer module path")
     ap.add_argument("--mixer", default="reference")
     ap.add_argument("--steps", type=int, default=300)
     ap.add_argument("--batch", type=int, default=8)
@@ -143,7 +148,7 @@ def main():
     if a.grad_check:
         return grad_check(a.layer, a.grad_check, a.batch, a.seq)
     torch.manual_seed(0)
-    model = LM(mixer_fn(a.layer, a.mixer), channel_decay=a.layer != "eda").cuda()
+    model = LM(mixer_fn(a.layer, a.mixer), channel_decay=getattr(layer_module(a.layer), "CHANNEL_DECAY", True)).cuda()
     opt = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.0)
     ids = data("cuda")
     split = int(len(ids) * 0.9)

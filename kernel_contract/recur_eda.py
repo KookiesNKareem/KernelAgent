@@ -17,6 +17,8 @@ import torch.nn.functional as F
 
 from .recur_bench import timeit
 
+CHANNEL_DECAY = False  # the training demo gives this layer one decay per head, not per key channel
+
 
 def reference(q, k, v, e, g, beta, gamma, scale):
     B, H, T, K = q.shape

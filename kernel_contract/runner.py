@@ -40,12 +40,15 @@ def run_contract(spec: OpSpec, kernel: Path, contract: str = "strided", device: 
         out.touch()
         seen = 0
         while seen < len(cases):
+            why = "process died or timed out"
             try:
-                subprocess.run([sys.executable, "-m", "kernel_contract.worker", str(d / "spec.json"),
-                                str(kernel.resolve()), str(d / "cases.json"), str(out), str(seen), device],
-                               cwd=REPO, capture_output=True, text=True, timeout=timeout)
+                p = subprocess.run([sys.executable, "-m", "kernel_contract.worker", str(d / "spec.json"),
+                                    str(kernel.resolve()), str(d / "cases.json"), str(out), str(seen), device],
+                                   cwd=REPO, capture_output=True, text=True, timeout=timeout)
+                if p.returncode:
+                    why = f"process died (exit {p.returncode}): {p.stderr.strip()[-400:]}"
             except subprocess.TimeoutExpired:
-                pass
+                why = f"timed out after {timeout} s"
             lines = [json.loads(x) for x in out.read_text().splitlines() if x.strip()]
             for r in lines[seen:]:
                 if on_case:
@@ -53,7 +56,7 @@ def run_contract(spec: OpSpec, kernel: Path, contract: str = "strided", device: 
             if len(lines) == seen:
                 # the process died or hung before finishing this case
                 c = cases[seen]
-                r = {"name": c["name"], "axis": c["axis"], "outcome": "crash", "reason": "process died or timed out"}
+                r = {"name": c["name"], "axis": c["axis"], "outcome": "crash", "reason": why}
                 with open(out, "a") as f:
                     f.write(json.dumps(r) + "\n")
                 if on_case:

@@ -155,6 +155,9 @@ def check_grads(spec, kernel, fresh, fn, case, device, fwd: dict) -> dict:
     worst = {"outcome": "accept", **{k: fwd[k] for k in ("err", "torch_err", "scale") if k in fwd}}
     for i in idx:
         gk, gt = args[i].grad, targs[i].grad
+        if gt is None:  # the reference ignores this input, so its true gradient is zero
+            gt = torch.zeros_like(targs[i])
+            gk = torch.zeros_like(args[i]) if gk is None else gk
         if gk is None:
             return {"outcome": "wrong", "reason": f"no gradient for argument {i}"}
         if tuple(gk.shape) != tuple(gt.shape):

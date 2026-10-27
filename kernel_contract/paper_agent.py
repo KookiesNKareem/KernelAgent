@@ -18,7 +18,7 @@ import time
 from pathlib import Path
 
 from utils.providers import get_model_provider
-from utils.providers.meta_provider import spent
+from utils.providers.meta_provider import META_PRICES, spent
 
 from .agent import CASE_TEXT, extract_code
 
@@ -230,7 +230,8 @@ class Run:
         print(json.dumps({k: v for k, v in e.items() if k not in ("results", "profile")}, default=str), flush=True)
 
     def ask(self, text: str, tag: str) -> Path:
-        if spent(self.provider.ledger) - self.start_usd + self.a.max_tokens * 20 / 1e6 > self.a.max_usd:
+        price_out = next(v[2] for k, v in META_PRICES.items() if self.a.model.startswith(k))
+        if spent(self.provider.ledger) - self.start_usd + self.a.max_tokens * price_out / 1e6 > self.a.max_usd:
             raise SystemExit(f"run budget ${self.a.max_usd} reached")
         self.messages.append({"role": "user", "content": text})
         self.log(event="llm_start", tag=tag, prompt=text)

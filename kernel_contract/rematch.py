@@ -13,7 +13,7 @@ from pathlib import Path
 
 import torch
 
-from . import recur_bench, recur_eda, recur_wek
+from . import recur_bench, recur_eda, recur_vse, recur_wek
 from .model import load_kernel
 from .recur_bench import timeit
 
@@ -28,7 +28,8 @@ def fla_gdr(q, k, v, g, beta, scale):
 
 LAYERS = {"gdr": (recur_bench.inputs, recur_bench.reference, fla_gdr),
           "eda": (recur_eda.inputs, recur_eda.reference, recur_eda.fla_reduction),
-          "wek": (recur_wek.inputs, recur_wek.reference, recur_wek.fla_reduction)}
+          "wek": (recur_wek.inputs, recur_wek.reference, recur_wek.fla_reduction),
+          "vse": (recur_vse.inputs, recur_vse.reference, None)}
 
 
 def main():
@@ -42,8 +43,8 @@ def main():
     inputs, reference, expert = LAYERS[a.layer]
     x = inputs(B=4, H=8, T=2048)
     xg = inputs(B=4, H=8, T=2048, grad=True)
-    fwd = {"expert": lambda: expert(*x, SCALE)}
-    fb = {"expert": lambda: expert(*xg, SCALE).float().sum().backward()}
+    fwd = {"expert": lambda: expert(*x, SCALE)} if expert else {}
+    fb = {"expert": lambda: expert(*xg, SCALE).float().sum().backward()} if expert else {}
     if a.fwd:
         kf = load_kernel(Path(a.fwd))
         fwd["candidate"] = lambda: kf(*x, SCALE)

@@ -19,10 +19,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from . import recur_eda, recur_wek
+from . import recur_eda, recur_vse, recur_wek
 from .model import load_kernel
 
-LAYERS = {"eda": recur_eda, "wek": recur_wek}
+LAYERS = {"eda": recur_eda, "wek": recur_wek, "vse": recur_vse}
 
 DATA_URL = "https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt"
 
@@ -116,7 +116,7 @@ def grad_check(layer, path, batch_size, seq):
     grads = {}
     for name, fn in (("reference", mixer_fn(layer, "reference")), ("kernel", mixer_fn(layer, path))):
         torch.manual_seed(0)
-        model = LM(fn, channel_decay=layer == "wek").cuda()
+        model = LM(fn, channel_decay=layer != "eda").cuda()
         loss = loss_of(model, x)
         loss.backward()
         grads[name] = (loss.item(), {n: p.grad.float() for n, p in model.named_parameters()})
@@ -141,7 +141,7 @@ def main():
     if a.grad_check:
         return grad_check(a.layer, a.grad_check, a.batch, a.seq)
     torch.manual_seed(0)
-    model = LM(mixer_fn(a.layer, a.mixer), channel_decay=a.layer == "wek").cuda()
+    model = LM(mixer_fn(a.layer, a.mixer), channel_decay=a.layer != "eda").cuda()
     opt = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.0)
     ids = data("cuda")
     split = int(len(ids) * 0.9)

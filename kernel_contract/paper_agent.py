@@ -95,7 +95,32 @@ WEK = dict(
         outs.append((S * (q[:, :, t] * scale)[..., None]).sum(-2))
     return torch.stack(outs, dim=2)                            # [B, H, T, V], float32''')
 
-LAYERS = {"gdr": GDR, "eda": EDA, "wek": WEK}
+VSE = dict(
+    signature="q, k, v, u, g, beta, gamma, scale",
+    dtypes="q, k, v, u arrive as bf16, g, beta and gamma as fp32",
+    eager_ms=None,
+    math=("S_t = (I - beta_t k_t k_t^T) diag(exp(g_t)) S_{t-1} (I - gamma_t u_t u_t^T) + beta_t k_t v_t^T, "
+          "o_t = scale * S_t^T q_t, with a per-key-channel log decay g_t in R^K and a unit value-space "
+          "direction u_t in R^V along which the state is erased from the right"),
+    reference='''def reference(q, k, v, u, g, beta, gamma, scale):
+    # q, k: [B, H, T, K] (k unit-norm); v, u: [B, H, T, V] (u unit-norm);
+    # g (per-channel log decay, <= 0): [B, H, T, K]; beta, gamma in (0,1): [B, H, T]
+    B, H, T, K = q.shape
+    V = v.shape[-1]
+    q, k, v, u, g, beta, gamma = (x.float() for x in (q, k, v, u, g, beta, gamma))
+    S = q.new_zeros(B, H, K, V)
+    outs = []
+    for t in range(T):
+        S = S * g[:, :, t].exp()[..., None]
+        ut = u[:, :, t]
+        S = S - gamma[:, :, t][..., None, None] * (S * ut[..., None, :]).sum(-1)[..., None] * ut[..., None, :]
+        kt, vt = k[:, :, t], v[:, :, t]
+        pred = (S * kt[..., None]).sum(-2)                      # S^T k_t, shape [B,H,V]
+        S = S + (beta[:, :, t][..., None] * (vt - pred))[..., None, :] * kt[..., None]
+        outs.append((S * (q[:, :, t] * scale)[..., None]).sum(-2))
+    return torch.stack(outs, dim=2)                            # [B, H, T, V], float32''')
+
+LAYERS = {"gdr": GDR, "eda": EDA, "wek": WEK, "vse": VSE}
 OBSERVED = "B=2, H=4, T=512, K=V=128"
 SYMBOLS = {"s0": "H", "s1": "T", "s2": "K=V"}
 

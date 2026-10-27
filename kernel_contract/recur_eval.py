@@ -12,7 +12,7 @@ from pathlib import Path
 import torch
 
 from .model import load_kernel
-from . import recur_bench, recur_eda, recur_wek
+from . import recur_bench, recur_eda, recur_vse, recur_wek
 from .recur_bench import timeit
 from .recur_check import gdr_spec
 from .cases import build_cases
@@ -23,7 +23,8 @@ WORKLOADS = {"timed": dict(B=4, H=8, T=2048), "train": dict(B=8, H=4, T=512),
              "b1_tail": dict(B=1, H=4, T=300), "k_ne_v": dict(B=2, H=4, T=256, D=128, Dv=64)}
 
 LAYERS = {"gdr": (gdr_spec, recur_bench.inputs), "eda": (recur_eda.spec, recur_eda.inputs),
-          "wek": (recur_wek.spec, recur_wek.inputs)}
+          "wek": (recur_wek.spec, recur_wek.inputs),
+          "vse": (recur_vse.spec, recur_vse.inputs)}
 
 SCALE = 128 ** -0.5
 

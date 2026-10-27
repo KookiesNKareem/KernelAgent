@@ -120,16 +120,15 @@ equation.
 | Muse Spark 1.3 Contributor | 12/12 | 9/12 | $0.39 ($0.03 per layer) |
 | Muse Spark Open | 11/12 | 7/12 | $7.73 ($0.64 per layer) |
 
-**Escalation.** The two layers no single model finished, b08 and b09, are solved by handing Contributor's
-run to Wonder (`--handoff`): Wonder starts from Contributor's verified forward and passes the full suite with
-its first backward.
+**Escalation.** b08 and b09 were run once more with escalation (`--handoff`): Wonder continues Contributor's
+run from its verified forward, and its first backward passes the full suite on both layers.
 
 | Layer | Contributor, then Wonder | Model cost |
 |---|---|---|
 | b08 read before write | 4.9 / 49 ms (85×) | $0.04 + $1.63 |
 | b09 decay after write | 3.3 / 50 ms (85×) | $0.04 + $0.71 |
 
-With escalation every one of the 12 layers has a verified forward and backward. The expert kernels are still
+Counting these runs, every one of the 12 layers has a verified forward and backward. The expert kernels are still
 2 to 3 times faster on the two most-tuned layers (b01, b02). The `@muse_kernel.fast` decorator escalates the
 same way by default: Contributor first, Wonder only if Contributor fails. Transcripts are in
 `runs_public/handoff/`.

@@ -120,9 +120,19 @@ equation.
 | Muse Spark 1.3 Contributor | 12/12 | 9/12 | $0.39 ($0.03 per layer) |
 | Muse Spark Open | 11/12 | 7/12 | $7.73 ($0.64 per layer) |
 
-Every layer gets a verified kernel from at least one model, and every layer except b08 and b09 gets a
-verified backward. The expert kernels are still 2 to 3 times faster on the two most-tuned layers
-(b01, b02).
+**Escalation.** The two layers no single model finished, b08 and b09, are solved by handing Contributor's
+run to Wonder (`--handoff`): Wonder starts from Contributor's verified forward and passes the full suite with
+its first backward.
+
+| Layer | Contributor, then Wonder | Model cost |
+|---|---|---|
+| b08 read before write | 4.9 / 49 ms (85×) | $0.04 + $1.63 |
+| b09 decay after write | 3.3 / 50 ms (85×) | $0.04 + $0.71 |
+
+With escalation every one of the 12 layers has a verified forward and backward. The expert kernels are still
+2 to 3 times faster on the two most-tuned layers (b01, b02). The `@muse_kernel.fast` decorator escalates the
+same way by default: Contributor first, Wonder only if Contributor fails. Transcripts are in
+`runs_public/handoff/`.
 
 Regenerate the table with `python -m kernel_contract.bench_report runs_public/bench1 runs_public/bench1/bench_baselines.json`.
 

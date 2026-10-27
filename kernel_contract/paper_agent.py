@@ -25,7 +25,12 @@ from .agent import CASE_TEXT, extract_code
 OBSERVED = "B=2, H=4, T=512, K=V=128"
 SYMBOLS = {"s0": "H", "s1": "T", "s2": "K=V"}
 
-REFERENCE = '''def reference(q, k, v, g, beta, scale):
+GDR = dict(
+    signature="q, k, v, g, beta, scale",
+    dtypes="q, k, v arrive as bf16, g and beta as fp32",
+    eager_ms=361,
+    math="S_t = exp(g_t) * (I - beta_t k_t k_t^T) S_{t-1} + beta_t k_t v_t^T, and o_t = scale * S_t^T q_t",
+    reference='''def reference(q, k, v, g, beta, scale):
     # q, k: [B, H, T, K]; v: [B, H, T, V]; g (log decay, <= 0): [B, H, T]; beta in (0,1): [B, H, T]
     B, H, T, K = q.shape
     V = v.shape[-1]
@@ -38,24 +43,54 @@ REFERENCE = '''def reference(q, k, v, g, beta, scale):
         pred = (S * kt[..., None]).sum(-2)                      # S^T k_t, shape [B,H,V]
         S = S + (beta[:, :, t][..., None] * (vt - pred))[..., None, :] * kt[..., None]
         outs.append((S * (q[:, :, t] * scale)[..., None]).sum(-2))
-    return torch.stack(outs, dim=2)                            # [B, H, T, V], float32'''
+    return torch.stack(outs, dim=2)                            # [B, H, T, V], float32''')
 
-WRITE = f"""A research paper introduces this recurrent sequence layer. Its reference implementation is a Python loop
+EDA = dict(
+    signature="q, k, v, e, g, beta, gamma, scale",
+    dtypes="q, k, v, e arrive as bf16, g, beta and gamma as fp32",
+    eager_ms=None,
+    math=("S_t = (I - beta_t k_t k_t^T)(I - gamma_t e_t e_t^T) exp(g_t) S_{t-1} + beta_t k_t v_t^T, and "
+          "o_t = scale * S_t^T q_t: before each delta-rule write along k_t, the state is erased along an "
+          "independent unit direction e_t"),
+    reference='''def reference(q, k, v, e, g, beta, gamma, scale):
+    # q, k, e: [B, H, T, K] (k and e unit-norm); v: [B, H, T, V]; g (log decay, <= 0): [B, H, T];
+    # beta, gamma in (0,1): [B, H, T]
+    B, H, T, K = q.shape
+    V = v.shape[-1]
+    q, k, v, e, g, beta, gamma = (x.float() for x in (q, k, v, e, g, beta, gamma))
+    S = q.new_zeros(B, H, K, V)
+    outs = []
+    for t in range(T):
+        S = S * g[:, :, t].exp()[..., None, None]
+        et = e[:, :, t]
+        S = S - gamma[:, :, t][..., None, None] * et[..., None] * (S * et[..., None]).sum(-2)[..., None, :]
+        kt, vt = k[:, :, t], v[:, :, t]
+        pred = (S * kt[..., None]).sum(-2)                      # S^T k_t, shape [B,H,V]
+        S = S + (beta[:, :, t][..., None] * (vt - pred))[..., None, :] * kt[..., None]
+        outs.append((S * (q[:, :, t] * scale)[..., None]).sum(-2))
+    return torch.stack(outs, dim=2)                            # [B, H, T, V], float32''')
+
+LAYERS = {"gdr": GDR, "eda": EDA}
+OBSERVED = "B=2, H=4, T=512, K=V=128"
+SYMBOLS = {"s0": "H", "s1": "T", "s2": "K=V"}
+
+
+def write_prompt(L: dict) -> str:
+    return f"""A research paper introduces this recurrent sequence layer. Its reference implementation is a Python loop
 over time:
 
 ```python
-{REFERENCE}
+{L["reference"]}
 ```
 
-In matrix form, with state S of shape [K, V]: S_t = exp(g_t) * (I - beta_t k_t k_t^T) S_{{t-1}} + beta_t k_t v_t^T,
-and o_t = scale * S_t^T q_t.
+In matrix form, with state S of shape [K, V]: {L["math"]}.
 
-The loop takes 361 ms forward at B=4, H=8, T=2048, K=V=128 on an NVIDIA L4, too slow to train with. Write a
-fast Triton implementation for the L4 (Ada, sm_89, Triton 3.5).
+The loop takes {L["eager_ms"]:.0f} ms forward at B=4, H=8, T=2048, K=V=128 on an NVIDIA L4, too slow to train
+with. Write a fast Triton implementation for the L4 (Ada, sm_89, Triton 3.5).
 
 Requirements:
-- Define `def kernel_function(q, k, v, g, beta, scale):` with the reference's argument order, shapes and
-  semantics, returning a [B, H, T, V] tensor (float32 or q's dtype). q, k, v arrive as bf16, g and beta as fp32.
+- Define `def kernel_function({L["signature"]}):` with the reference's argument order, shapes and semantics,
+  returning a [B, H, T, V] tensor (float32 or q's dtype). {L["dtypes"]}.
 - It must match the reference on any inputs the reference accepts.
 - The computation must happen in your own @triton.jit kernels; the Python wrapper may only allocate, reshape,
   launch and do cheap elementwise prep. Do not import or copy any existing implementation of this layer.
@@ -63,9 +98,12 @@ Requirements:
 You cannot run anything. Return the complete module in one ```python block, then 2-4 sentences on your
 approach and anything you are unsure about."""
 
-BACKWARD = """Next, make it trainable. Write a new self-contained module whose kernel_function(q, k, v, g, beta, scale)
+
+def backward_prompt(L: dict) -> str:
+    names = L["signature"].rsplit(", ", 1)[0]
+    return f"""Next, make it trainable. Write a new self-contained module whose kernel_function({L["signature"]})
 returns the output through a torch.autograd.Function, so that out.backward(grad) yields correct gradients for
-q, k, v, g and beta, each in its input's dtype. The backward must also run in your own Triton kernels; Python
+{names}, each in its input's dtype. The backward must also run in your own Triton kernels; Python
 may only allocate, launch, and do cheap elementwise or reduction glue. You cannot run anything. Return the
 complete module in one ```python block, then 3-5 sentences on your approach."""
 
@@ -144,7 +182,8 @@ class Run:
         dest = f"{self.a.remote_dir}/runs_remote/{self.out.name}/{path.name}"
         pre = shlex.split(self.a.remote)
         subprocess.run(pre + [f"mkdir -p $(dirname {dest}) && cat > {dest}"], input=path.read_bytes(), check=True)
-        cmd = f"cd {self.a.remote_dir} && python -m kernel_contract.recur_eval {dest}" + (" --grads" if grads else "")
+        cmd = (f"cd {self.a.remote_dir} && python -m kernel_contract.recur_eval {dest} --layer {self.a.layer}"
+               + (" --grads" if grads else ""))
         p = subprocess.run(pre + [cmd], capture_output=True, text=True)
         line = next((x for x in p.stdout.splitlines() if x.startswith("RESULT ")), None)
         res = json.loads(line[7:]) if line else {"outcome": "crash", "results": [
@@ -184,14 +223,16 @@ class Run:
         return best
 
     def go(self):
-        path = self.ask(WRITE, "write")
+        L = dict(LAYERS[self.a.layer])
+        L["eager_ms"] = self.a.eager_ms or L["eager_ms"]
+        path = self.ask(write_prompt(L), "write")
         res = self.evaluate(path, False)
         path, res = self.until_correct(path, res, False, self.a.repairs, "kernel")
         if res["blocking"]:
             return self.log(event="done", stage="forward", ok=False, run_usd=spent() - self.start_usd)
         path, res = self.optimize(path, res, False, self.a.opt_rounds, 1.54)
         self.log(event="forward_final", path=str(path), ms=res["ms"])
-        bpath = self.ask(BACKWARD, "bwd")
+        bpath = self.ask(backward_prompt(L), "bwd")
         bres = self.evaluate(bpath, True)
         bpath, bres = self.until_correct(bpath, bres, True, self.a.repairs, "backward")
         if not bres["blocking"]:
@@ -204,6 +245,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="muse-wonder-1.0")
     ap.add_argument("--effort", default="high")
+    ap.add_argument("--layer", default="gdr", choices=sorted(LAYERS))
+    ap.add_argument("--eager-ms", type=float)
     ap.add_argument("--remote", required=True)
     ap.add_argument("--remote-dir", default="/workspace/ka")
     ap.add_argument("--out", required=True)

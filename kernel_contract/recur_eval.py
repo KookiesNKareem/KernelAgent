@@ -1,6 +1,6 @@
-"""Pod side of the paper agent: check a gated-delta-rule candidate, then time and profile it. One JSON line out.
+"""Pod side of the paper agent: check a recurrent-layer candidate, then time and profile it. One JSON line out.
 
-  python -m kernel_contract.recur_eval CANDIDATE.py [--grads]
+  python -m kernel_contract.recur_eval CANDIDATE.py [--grads] [--layer gdr|eda]
 """
 
 from __future__ import annotations
@@ -12,14 +12,17 @@ from pathlib import Path
 import torch
 
 from .model import load_kernel
-from .recur_bench import inputs, timeit
+from . import recur_bench, recur_eda
+from .recur_bench import timeit
 from .recur_check import gdr_spec
 from .runner import run_contract
+
+LAYERS = {"gdr": (gdr_spec, recur_bench.inputs), "eda": (recur_eda.spec, recur_eda.inputs)}
 
 SCALE = 128 ** -0.5
 
 
-def profile(kern, grads: bool) -> list[dict]:
+def profile(kern, grads: bool, inputs) -> list[dict]:
     from torch.profiler import ProfilerActivity, profile as prof
     x = inputs(B=4, H=8, T=2048, D=128, grad=grads)
     step = (lambda: kern(*x, SCALE).float().sum().backward()) if grads else (lambda: kern(*x, SCALE))
@@ -34,8 +37,9 @@ def profile(kern, grads: bool) -> list[dict]:
     return [{"kernel": e.key[:60], "ms_per_step": e.device_time_total / 5 / 1000} for e in rows]
 
 
-def main(path: str, grads: bool):
-    spec = gdr_spec()
+def main(path: str, grads: bool, layer: str = "gdr"):
+    make_spec, inputs = LAYERS[layer]
+    spec = make_spec()
     spec.flags["check_grads"] = grads
     v = run_contract(spec, Path(path), timeout=900)
     out = {"outcome": v.outcome, "results": v.results}
@@ -48,9 +52,10 @@ def main(path: str, grads: bool):
         else:
             x = inputs(B=4, H=8, T=2048, D=128)
             out["ms"] = timeit(lambda: kern(*x, SCALE), reps=20)
-        out["profile"] = profile(kern, grads)
+        out["profile"] = profile(kern, grads, inputs)
     print("RESULT " + json.dumps(out, default=str), flush=True)
 
 
 if __name__ == "__main__":
-    main(sys.argv[1], grads="--grads" in sys.argv)
+    main(sys.argv[1], grads="--grads" in sys.argv,
+         layer=sys.argv[sys.argv.index("--layer") + 1] if "--layer" in sys.argv else "gdr")

@@ -247,8 +247,10 @@ class Run:
                + (" --grads" if grads else ""))
         p = subprocess.run(pre + [cmd], capture_output=True, text=True)
         line = next((x for x in p.stdout.splitlines() if x.startswith("RESULT ")), None)
-        res = json.loads(line[7:]) if line else {"outcome": "crash", "results": [
-            {"name": "observed", "axis": "seed", "outcome": "crash", "reason": (p.stderr or p.stdout)[-600:]}]}
+        if not line:
+            # the checker itself failed (import error, lost pod); never report that to the model as a kernel bug
+            raise SystemExit(f"checker produced no result:\n{(p.stderr or p.stdout)[-1500:]}")
+        res = json.loads(line[7:])
         if re.search(r"^\s*(import|from)\s+fla\b", path.read_text(), re.M):
             res = {"outcome": "refuse", "results": [{"name": "observed", "axis": "seed", "outcome": "refuse",
                                                      "reason": "the module imports an existing implementation"}]}

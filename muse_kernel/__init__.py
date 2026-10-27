@@ -130,6 +130,8 @@ class Fast:
         (self.job / "extra_specs.json").write_text(json.dumps([s.to_json() for s in specs[1:]]))
         job = {"hash": self.hash, "name": self.fn.__name__, "source": inspect.getsource(self.fn),
                "signature": ", ".join(names), "call": describe_call(specs[0]), "sizes": specs[0].sizes,
+               "grad_names": ", ".join(n for n, a in zip(names, self.seen[0]["args"])
+                                       if isinstance(a, torch.Tensor) and a.is_floating_point()),
                "domains": describe_domains(self.domains, names), "verified_signatures": [repr(s) for s in sigs],
                "model": os.environ.get("MUSE_KERNEL_MODEL", "muse-wonder-1.0"),
                "max_usd": float(os.environ.get("MUSE_KERNEL_MAX_USD", 4))}

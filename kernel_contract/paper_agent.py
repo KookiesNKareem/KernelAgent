@@ -188,7 +188,7 @@ approach and anything you are unsure about."""
 
 
 def backward_prompt(L: dict) -> str:
-    names = L["signature"].rsplit(", ", 1)[0]
+    names = L.get("grad_names") or L["signature"].rsplit(", ", 1)[0]
     return f"""Next, make it trainable. Write a new self-contained module whose kernel_function({L["signature"]})
 returns the output through a torch.autograd.Function, so that out.backward(grad) yields correct gradients for
 {names}, each in its input's dtype. The backward must also run in your own Triton kernels; Python
@@ -372,7 +372,7 @@ class Run:
         if self.a.job:
             J = json.loads((Path(self.a.job) / "job.json").read_text())
             JOB_SIZES.update(J["sizes"])
-            L = {"signature": J["signature"]}
+            L = {"signature": J["signature"], "grad_names": J["grad_names"]}
             path = self.ask(job_prompt(J), "write")
             res = self.evaluate(path, False)
             path, res = self.until_correct(path, res, False, self.a.repairs, "kernel")

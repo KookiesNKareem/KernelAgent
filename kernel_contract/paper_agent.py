@@ -133,7 +133,7 @@ may only allocate, launch, and do cheap elementwise or reduction glue. You canno
 complete module in one ```python block, then 3-5 sentences on your approach."""
 
 
-WORKLOAD_TEXT = {"timed": "B=4, H=8, T=2048, K=V=128", "train": "B=8, H=4, T=512, K=V=128",
+WORKLOAD_TEXT = {"timed": "B=4, H=8, T=2048, K=V=128", "timed_b1h2": "B=1, H=2, T=2048, K=V=128", "train": "B=8, H=4, T=512, K=V=128",
                  "b1_tail": "B=1, H=4, T=300, K=V=128", "k_ne_v": "B=2, H=4, T=256, K=128, V=64"}
 
 

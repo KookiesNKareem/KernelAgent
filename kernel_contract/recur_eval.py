@@ -54,6 +54,9 @@ def main(path: str, grads: bool, layer: str = "gdr"):
     v = run_contract(spec, Path(path), timeout=900, cases=cases)
     results = list(v.results)
     for wname, shape in WORKLOADS.items():
+        if grads and wname == "timed":
+            # fp64 autograd through 2048 reference steps at B=4, H=8 needs ~50 GB; keep T, shrink B and H
+            wname, shape = "timed_b1h2", dict(B=1, H=2, T=2048)
         ws = make_spec(**shape)
         ws.flags["check_grads"] = grads
         seeds = [c for c in build_cases(ws) if c["name"] in ("observed", "seed1")]

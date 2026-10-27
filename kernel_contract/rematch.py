@@ -13,7 +13,7 @@ from pathlib import Path
 
 import torch
 
-from . import recur_bench, recur_eda
+from . import recur_bench, recur_eda, recur_wek
 from .model import load_kernel
 from .recur_bench import timeit
 
@@ -27,7 +27,8 @@ def fla_gdr(q, k, v, g, beta, scale):
 
 
 LAYERS = {"gdr": (recur_bench.inputs, recur_bench.reference, fla_gdr),
-          "eda": (recur_eda.inputs, recur_eda.reference, recur_eda.fla_reduction)}
+          "eda": (recur_eda.inputs, recur_eda.reference, recur_eda.fla_reduction),
+          "wek": (recur_wek.inputs, recur_wek.reference, recur_wek.fla_reduction)}
 
 
 def main():

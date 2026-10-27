@@ -12,12 +12,13 @@ from pathlib import Path
 import torch
 
 from .model import load_kernel
-from . import recur_bench, recur_eda
+from . import recur_bench, recur_eda, recur_wek
 from .recur_bench import timeit
 from .recur_check import gdr_spec
 from .runner import run_contract
 
-LAYERS = {"gdr": (gdr_spec, recur_bench.inputs), "eda": (recur_eda.spec, recur_eda.inputs)}
+LAYERS = {"gdr": (gdr_spec, recur_bench.inputs), "eda": (recur_eda.spec, recur_eda.inputs),
+          "wek": (recur_wek.spec, recur_wek.inputs)}
 
 SCALE = 128 ** -0.5
 

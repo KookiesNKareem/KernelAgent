@@ -159,12 +159,12 @@ class Run:
         print(json.dumps({k: v for k, v in e.items() if k not in ("results", "profile")}, default=str), flush=True)
 
     def ask(self, text: str, tag: str) -> Path:
-        if spent() - self.start_usd + 32000 * 20 / 1e6 > self.a.max_usd:
+        if spent() - self.start_usd + self.a.max_tokens * 20 / 1e6 > self.a.max_usd:
             raise SystemExit(f"run budget ${self.a.max_usd} reached")
         self.messages.append({"role": "user", "content": text})
         self.log(event="llm_start", tag=tag, prompt=text)
         t0 = time.time()
-        resp = self.provider.get_response(self.a.model, self.messages, max_tokens=32000,
+        resp = self.provider.get_response(self.a.model, self.messages, max_tokens=self.a.max_tokens,
                                           reasoning_effort=self.a.effort)
         self.messages.append({"role": "assistant", "content": resp.content})
         self.n += 1
@@ -225,6 +225,11 @@ class Run:
     def go(self):
         L = dict(LAYERS[self.a.layer])
         L["eager_ms"] = self.a.eager_ms or L["eager_ms"]
+        if self.a.resume_bwd:
+            self.replay(self.a.resume_bwd)
+            path = next(self.out.glob(f"{self.a.resume_bwd:02d}_*.py"))
+            res = self.evaluate(path, False)
+            return self.backward(L, path, res)
         path = self.ask(write_prompt(L), "write")
         res = self.evaluate(path, False)
         path, res = self.until_correct(path, res, False, self.a.repairs, "kernel")
@@ -232,6 +237,9 @@ class Run:
             return self.log(event="done", stage="forward", ok=False, run_usd=spent() - self.start_usd)
         path, res = self.optimize(path, res, False, self.a.opt_rounds, 1.54)
         self.log(event="forward_final", path=str(path), ms=res["ms"])
+        self.backward(L, path, res)
+
+    def backward(self, L, path, res):
         bpath = self.ask(backward_prompt(L), "bwd")
         bres = self.evaluate(bpath, True)
         bpath, bres = self.until_correct(bpath, bres, True, self.a.repairs, "backward")
@@ -254,6 +262,8 @@ def main():
     ap.add_argument("--opt-rounds", type=int, default=2)
     ap.add_argument("--bwd-opt-rounds", type=int, default=1)
     ap.add_argument("--max-usd", type=float, default=15.0)
+    ap.add_argument("--max-tokens", type=int, default=64000)
+    ap.add_argument("--resume-bwd", type=int, help="replay the first N calls of --out, take call N as the forward")
     Run(ap.parse_args()).go()
 
 

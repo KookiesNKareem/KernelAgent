@@ -77,7 +77,7 @@ class _MuseProvider(OpenAICompatibleProvider):
         return [self.get_response(model_name, messages, **kwargs) for _ in range(n)]
 
     def get_max_tokens_limit(self, model_name: str) -> int:
-        return 32000
+        return 128000
 
     def supports_multiple_completions(self) -> bool:
         # The Meta API rejects n > 1, so the base class samples one call per completion.

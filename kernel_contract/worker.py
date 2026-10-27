@@ -14,6 +14,7 @@ import sys
 import traceback
 
 import torch
+from torch.overrides import TorchFunctionMode
 
 from .cases import VALUE_TRANSFORMS
 from .spec import OpSpec, materialize
@@ -92,7 +93,8 @@ def run_case(spec: OpSpec, kernel, case: dict, device: str) -> dict:
         return {"outcome": "skip", "reason": f"reference raised {type(e).__name__}: {e}"[:300]}
     args, kwargs = fresh()
     try:
-        truth = first_tensor(fn(*to_f64(args), **to_f64(kwargs)))
+        with KeepFloat64():
+            truth = first_tensor(fn(*to_f64(args), **to_f64(kwargs)))
     except Exception:
         truth = first_tensor(fn(*[a.float() if isinstance(a, torch.Tensor) and a.is_floating_point() else a
                                   for a in args], **kwargs))
@@ -112,6 +114,20 @@ def run_case(spec: OpSpec, kernel, case: dict, device: str) -> dict:
     if fwd["outcome"] != "accept" or not spec.flags.get("check_grads"):
         return fwd
     return check_grads(spec, kernel, fresh, fn, case, device, fwd)
+
+
+class KeepFloat64(TorchFunctionMode):
+    """While computing the float64 truth, a reference's own casts to float32 (x.float(), x.to(torch.float32))
+    keep float64, so user code written for fp32 still yields a float64 oracle."""
+
+    def __torch_function__(self, func, types, args=(), kwargs=None):
+        kwargs = kwargs or {}
+        if func in (torch.Tensor.float, torch.Tensor.to, torch.Tensor.type) and args and \
+                isinstance(args[0], torch.Tensor) and args[0].dtype == torch.float64:
+            target = kwargs.get("dtype", next((a for a in args[1:] if isinstance(a, torch.dtype)), None))
+            if func is torch.Tensor.float or target == torch.float32 or target == "torch.FloatTensor":
+                return args[0]
+        return func(*args, **kwargs)
 
 
 def check_grads(spec, kernel, fresh, fn, case, device, fwd: dict) -> dict:
@@ -134,7 +150,8 @@ def check_grads(spec, kernel, fresh, fn, case, device, fwd: dict) -> dict:
         return {"outcome": kind, "reason": ("backward: " + msg)[:300]}
     targs, tkwargs = fresh()
     targs = [a.double().detach().requires_grad_(True) if i in idx else a for i, a in enumerate(targs)]
-    (first_tensor(fn(*targs, **tkwargs)).double() * w.double()).sum().backward()
+    with KeepFloat64():
+        (first_tensor(fn(*targs, **tkwargs)).double() * w.double()).sum().backward()
     worst = {"outcome": "accept", **{k: fwd[k] for k in ("err", "torch_err", "scale") if k in fwd}}
     for i in idx:
         gk, gt = args[i].grad, targs[i].grad

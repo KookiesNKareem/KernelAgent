@@ -160,6 +160,33 @@ You cannot run anything. Return the complete module in one ```python block, then
 approach and anything you are unsure about."""
 
 
+def job_prompt(J: dict) -> str:
+    facts = "".join(f"\n- {d}" for d in J["domains"]) or "\n- (no value constraints observed)"
+    return f"""This PyTorch function is part of a model being trained. It is too slow to train with:
+
+```python
+{J["source"]}
+```
+
+The model calls it like this (shapes, dtypes and strides as observed):
+
+    {J["call"]}
+
+Observed on every call:{facts}
+
+It takes {J["eager_ms"]:.0f} ms forward on this call on an NVIDIA L4. Write a fast Triton implementation for the L4
+(Ada, sm_89, Triton 3.5).
+
+Requirements:
+- Define `def kernel_function({J["signature"]}):` with the same arguments and semantics, returning the same result.
+- It must match the function on any inputs it accepts within the observed constraints.
+- The computation must happen in your own @triton.jit kernels; the Python wrapper may only allocate, reshape,
+  launch and do cheap elementwise prep. Do not import or copy any existing implementation.
+
+You cannot run anything. Return the complete module in one ```python block, then 2-4 sentences on your
+approach and anything you are unsure about."""
+
+
 def backward_prompt(L: dict) -> str:
     names = L["signature"].rsplit(", ", 1)[0]
     return f"""Next, make it trainable. Write a new self-contained module whose kernel_function({L["signature"]})
@@ -173,12 +200,22 @@ WORKLOAD_TEXT = {"timed": "B=4, H=8, T=2048, K=V=128", "timed_b1h2": "B=1, H=2, 
                  "b1_tail": "B=1, H=4, T=300, K=V=128", "k_ne_v": "B=2, H=4, T=256, K=128, V=64"}
 
 
+JOB_SIZES: dict[str, int] = {}  # set in job mode: the observed call's size symbols
+
+
 def describe(name: str) -> str:
     if "/" in name:
         w, case = name.split("/", 1)
+        if w.startswith("call"):
+            return f"another shape the model calls the function with (observed call {w[4:]})"
         return f"a fresh random draw at {WORKLOAD_TEXT.get(w, w)}"
     if name == "compound":
+        if JOB_SIZES:
+            return "every tensor stored transposed and log-decay inputs between -25 and -5, together"
         return "T=257, every tensor stored transposed, and log-decay between -25 and -5, all at once"
+    if "=" in name and JOB_SIZES:
+        sym, val = name.split("=")
+        return f"a dimension that is {JOB_SIZES.get(sym, '?')} in the observed call changed to {val}"
     if name in CASE_TEXT:
         return CASE_TEXT[name]
     if "=" in name:
@@ -266,8 +303,12 @@ class Run:
         dest = f"{self.a.remote_dir}/runs_remote/{self.out.name}/{path.name}"
         pre = shlex.split(self.a.remote)
         subprocess.run(pre + [f"mkdir -p $(dirname {dest}) && cat > {dest}"], input=path.read_bytes(), check=True)
-        cmd = (f"cd {self.a.remote_dir} && python -m kernel_contract.recur_eval {dest} --layer {self.a.layer}"
-               + (" --grads" if grads else ""))
+        if self.a.job:
+            cmd = (f"cd {self.a.remote_dir} && python -m muse_kernel.remote_eval {self.a.remote_job} {dest}"
+                   + (" --grads" if grads else ""))
+        else:
+            cmd = (f"cd {self.a.remote_dir} && python -m kernel_contract.recur_eval {dest} --layer {self.a.layer}"
+                   + (" --grads" if grads else ""))
         p = subprocess.run(pre + [cmd], capture_output=True, text=True)
         line = next((x for x in p.stdout.splitlines() if x.startswith("RESULT ")), None)
         if not line:
@@ -328,6 +369,18 @@ class Run:
                 f.unlink()
 
     def go(self):
+        if self.a.job:
+            J = json.loads((Path(self.a.job) / "job.json").read_text())
+            JOB_SIZES.update(J["sizes"])
+            L = {"signature": J["signature"]}
+            path = self.ask(job_prompt(J), "write")
+            res = self.evaluate(path, False)
+            path, res = self.until_correct(path, res, False, self.a.repairs, "kernel")
+            if res["blocking"]:
+                return self.log(event="done", stage="forward", ok=False, run_usd=self.cost)
+            path, res = self.optimize(path, res, False, self.a.opt_rounds, 0)
+            self.log(event="forward_final", path=str(path), ms=res["ms"])
+            return self.backward(L, path, res)
         L = dict(LAYERS[self.a.layer]) if self.a.layer in LAYERS else module_layer(self.a.layer)
         L["eager_ms"] = self.a.eager_ms or L["eager_ms"]
         if self.a.repair_from:
@@ -376,6 +429,8 @@ def main():
     ap.add_argument("--bwd-opt-rounds", type=int, default=1)
     ap.add_argument("--max-usd", type=float, default=15.0)
     ap.add_argument("--max-tokens", type=int, default=64000)
+    ap.add_argument("--job", help="a muse_kernel build directory (job.json) instead of a named layer")
+    ap.add_argument("--remote-job", help="that build's directory on the GPU host")
     ap.add_argument("--repair-from", type=int, help="replay the first N calls of --out and repair call N")
     ap.add_argument("--grads", action="store_true")
     ap.add_argument("--resume-bwd", type=int, help="replay the first N calls of --out, take call N as the forward")

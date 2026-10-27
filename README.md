@@ -15,8 +15,9 @@ by an independent contract the model does not control.
   accepts" and "use your own Triton". No algorithm hints, no expert timings.
 - **Feedback:** only the checker's counterexamples and the GPU profile. No human edits.
 - **Checker:** float64 ground truth; fresh seeds, value scales and shifts, size changes (odd head dims,
-  ragged T), strided, transposed and offset layouts, extreme decay and gate values, a compound case, the
-  exact timed and training shapes, K != V, and every gradient against float64 autograd.
+  ragged T), strided, transposed and offset layouts, decay and gate values across their whole range
+  (edges, typical, high, mid), a compound case, the exact timed and training shapes drawn at the timing
+  distribution, K != V, and every gradient against float64 autograd. 41 cases per kernel.
 
 ## Results (NVIDIA L4, B=4, H=8, T=2048, K=V=128, same-pod back-to-back medians)
 
@@ -26,6 +27,7 @@ by an independent contract the model does not control.
 | Scalar-decay EDA (arXiv 2606.26560) | Muse Wonder | 2.16 ms | 32.2 ms | 220 / 4540 ms | FLA interleave 4.21 / 12.1 ms | ~$3 |
 | Variant written before any model saw it (`6c22865`) | Muse Wonder | 5.87 ms | 23.6 ms | 500 / 6064 ms | KDA interleave 8.27 / 22.4 ms | $2.60 |
 | Same variant | Muse Spark Open | 11.0 ms | 397 ms | 500 / 6064 ms | KDA interleave 8.27 / 22.4 ms | $0.96 |
+| Value-side erase, two-sided (`e66fffc`) | Muse Wonder | recurrent path | 124 ms | 220 / 5371 ms | none (no key-side reduction) | ~$7 |
 
 Warm `torch.compile` of the slow loop: gated delta rule forward 37.4 ms after 24 minutes of compiling;
 EDA forward 83 ms after 43 minutes.
@@ -40,6 +42,14 @@ EDA forward 83 ms after 43 minutes.
 
 The kernel's loss tracks the reference within 0.005 over the first 10 steps (0.038 max over 300, the same
 as the expert route), and every parameter gradient matches the reference to within 0.9% on step one.
+
+The value-side erase, S_t = (I - beta k k^T) D S_{t-1} (I - gamma u u^T) + beta k v^T, has no reduction to an
+existing kernel. Wonder's chunked forward and backward passed the original suite at 8.2 / 29.6 ms, but they
+branched on the gate range and the suite never drew gates where training lives. A training run hit the
+untested branch; widening the suite exposed wrong gradients there; Wonder then diagnosed that its chunk
+transform inverts the erase product, which is unstable for gamma > 0.5, and routed those inputs to its
+recurrent kernels. The verified result is correct everywhere but is not chunk-fast at typical gates; the
+unverified fast-path run is kept in `runs_public/wonder_vse1_unverified_fastpath`.
 
 **What the checker caught along the way** (all fixed by the model from the counterexample alone): shared
 memory overflow on the first write of every layer; silently wrong values at head dims 65 and 129; an

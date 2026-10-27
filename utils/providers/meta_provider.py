@@ -1,5 +1,6 @@
 """Meta's models: Muse Spark over the Meta Model API, Muse Spark Open over Baseten."""
 
+import fcntl
 import json
 import os
 from pathlib import Path
@@ -43,8 +44,15 @@ def _record(model_name: str, usage: dict | None, ledger: Path = LEDGER) -> float
     cached = (usage.get("prompt_tokens_details") or {}).get("cached_tokens") or 0
     cost = ((usage.get("prompt_tokens", 0) - cached) * price_in + cached * price_cached
             + usage.get("completion_tokens", 0) * price_out) / 1e6
-    total = spent(ledger) + cost
-    ledger.write_text(json.dumps({"usd": total}))
+    # parallel benchmark workers share the ledger, so the read-modify-write holds an exclusive lock
+    with open(ledger.with_suffix(".lock"), "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        try:
+            data = json.loads(ledger.read_text())
+        except (FileNotFoundError, ValueError):
+            data = {"usd": 0.0}
+        data["usd"] = data.get("usd", 0.0) + cost
+        ledger.write_text(json.dumps(data))
     return cost
 
 

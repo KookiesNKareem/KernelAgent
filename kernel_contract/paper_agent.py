@@ -125,6 +125,17 @@ OBSERVED = "B=2, H=4, T=512, K=V=128"
 SYMBOLS = {"s0": "H", "s1": "T", "s2": "K=V"}
 
 
+def module_layer(path: str) -> dict:
+    """Prompt fields for a layer module (kernel_contract.layers.*): its docstring equation and reference loop."""
+    import importlib
+    import inspect
+    mod = importlib.import_module(path)
+    eq = " ".join(l.strip() for l in (mod.__doc__ or "").splitlines()[1:] if l.strip())
+    return dict(signature=", ".join(inspect.signature(mod.reference).parameters),
+                dtypes="q, k, v, e arrive as bf16, g, beta and gamma as fp32", eager_ms=None,
+                math=f"{eq}. Inputs the equation does not use are still passed", reference=inspect.getsource(mod.reference).rstrip())
+
+
 def write_prompt(L: dict) -> str:
     return f"""A research paper introduces this recurrent sequence layer. Its reference implementation is a Python loop
 over time:
@@ -305,7 +316,7 @@ class Run:
                 f.unlink()
 
     def go(self):
-        L = dict(LAYERS[self.a.layer])
+        L = dict(LAYERS[self.a.layer]) if self.a.layer in LAYERS else module_layer(self.a.layer)
         L["eager_ms"] = self.a.eager_ms or L["eager_ms"]
         if self.a.repair_from:
             self.replay(self.a.repair_from)
@@ -343,7 +354,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="muse-wonder-1.0")
     ap.add_argument("--effort", default="high")
-    ap.add_argument("--layer", default="gdr", choices=sorted(LAYERS))
+    ap.add_argument("--layer", default="gdr", help="gdr, eda, wek, vse, or a module path")
     ap.add_argument("--eager-ms", type=float)
     ap.add_argument("--remote", required=True)
     ap.add_argument("--remote-dir", default="/workspace/ka")

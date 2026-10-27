@@ -70,6 +70,10 @@ class LM(nn.Module):
         self.emb = nn.Embedding(256, d)
         self.blocks = nn.ModuleList(Block(d, heads, head_dim, fn, channel_decay) for _ in range(layers))
         self.norm = nn.RMSNorm(d)
+        nn.init.normal_(self.emb.weight, std=0.02)
+        for b in self.blocks:
+            for lin in (b.mix.proj, b.mix.out, b.up, b.down):
+                nn.init.normal_(lin.weight, std=0.02)
 
     def forward(self, ids):
         x = self.emb(ids)

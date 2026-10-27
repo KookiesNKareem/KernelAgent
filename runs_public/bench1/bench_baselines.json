@@ -1,0 +1,71 @@
+{
+ "b01_gdr": {
+  "eager_ms": 148.63111404702067,
+  "eager_fwd_bwd_ms": 3264.8409297689795,
+  "expert_rel_err": 0.0033374300692230463,
+  "expert_ms": 1.5151562402024865,
+  "expert_fwd_bwd_ms": 5.549405096098781
+ },
+ "b02_kda": {
+  "eager_ms": 150.6961383856833,
+  "eager_fwd_bwd_ms": 4167.851838748902,
+  "expert_rel_err": 0.003747593378648162,
+  "expert_ms": 3.140720445662737,
+  "expert_fwd_bwd_ms": 10.584902204573154
+ },
+ "b03_eda": {
+  "eager_ms": 218.44073105603456,
+  "eager_fwd_bwd_ms": 4424.272359814495,
+  "expert_rel_err": 0.003344988916069269,
+  "expert_ms": 4.296090151183307,
+  "expert_fwd_bwd_ms": 12.448940984904766
+ },
+ "b04_eda_channel": {
+  "eager_ms": 216.55721124261618,
+  "eager_fwd_bwd_ms": 5313.820518087596,
+  "expert_rel_err": 0.003923982381820679,
+  "expert_ms": 8.355176961049438,
+  "expert_fwd_bwd_ms": 22.63184399344027
+ },
+ "b05_write_erase": {
+  "eager_ms": 217.063263989985,
+  "eager_fwd_bwd_ms": 5328.917754348367,
+  "expert_rel_err": 0.003931614104658365,
+  "expert_ms": 8.355636149644852,
+  "expert_fwd_bwd_ms": 22.60458590462804
+ },
+ "b06_value_erase": {
+  "eager_ms": 215.59464000165462,
+  "eager_fwd_bwd_ms": 5357.845154125243
+ },
+ "b07_coupled": {
+  "eager_ms": 242.68709169700742,
+  "eager_fwd_bwd_ms": 5369.99682802707,
+  "expert_rel_err": 0.0038904871325939894,
+  "expert_ms": 8.372089941985905,
+  "expert_fwd_bwd_ms": 22.61772369965911
+ },
+ "b08_read_before": {
+  "eager_ms": 150.68676276132464,
+  "eager_fwd_bwd_ms": 4178.508096840233
+ },
+ "b09_decay_after": {
+  "eager_ms": 152.38319104537368,
+  "eager_fwd_bwd_ms": 4235.460526775569
+ },
+ "b10_neg_eig": {
+  "eager_ms": 162.09875233471394,
+  "eager_fwd_bwd_ms": 3208.1278823316097,
+  "expert_rel_err": 0.003356482135131955,
+  "expert_ms": 1.5164917567744851,
+  "expert_fwd_bwd_ms": 5.76735669746995
+ },
+ "b11_add_write": {
+  "eager_ms": 192.29004764929414,
+  "eager_fwd_bwd_ms": 5258.219436742365
+ },
+ "b12_two_sided": {
+  "eager_ms": 278.1497179530561,
+  "eager_fwd_bwd_ms": 5541.215891949832
+ }
+}

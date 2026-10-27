@@ -10,7 +10,8 @@ layer, so most equation edits are never trained at scale. This project hands a M
 the slow loop and gets back a chunked Triton forward **and backward** that a training run can use, checked
 by an independent contract the model does not control.
 
-- **Writer:** Muse Wonder (Meta Model API) or Muse Spark Open (open weights, via Baseten).
+- **Writer:** Muse Wonder or Muse Spark 1.3 Contributor (Meta Model API), or Muse Spark Open (open weights,
+  via Baseten).
 - **Prompt:** only the equation, the reference loop, the target GPU, "match the reference on any inputs it
   accepts" and "use your own Triton". No algorithm hints, no expert timings.
 - **Feedback:** only the checker's counterexamples and the GPU profile. No human edits.
@@ -59,6 +60,83 @@ unverified fast-path run is kept in `runs_public/wonder_vse1_unverified_fastpath
 memory overflow on the first write of every layer; silently wrong values at head dims 65 and 129; an
 optimized kernel that was wrong only when the state decays almost fully each step; a backward with a wrong
 `dq` on every input.
+
+## A layer no kernel library runs: Triadic Gated DeltaNet
+
+Triadic Gated DeltaNet (arXiv 2609.36529, September 2026) applies the delta rule to the joint key
+k_t ⊗ k'_t, so the state is 512 x 128 per head (`kernel_contract/layers/triadic_gdn.py`). FLA's per-channel
+route refuses it ("only support key headdim <=256 for KDA, got 512"), and the slow loop runs out of the L4's
+22 GB when training at the benchmark shape.
+
+| Writer | Forward | Fwd+bwd | Model cost |
+|---|---|---|---|
+| Slow reference loop | 506 ms | out of memory (1234 ms at B=1, H=4, T=1024) | |
+| Muse Wonder | 5.96 ms | 131 ms | $2.85 |
+| Muse Spark 1.3 Contributor | 8.9 ms | 218 ms | $0.03 |
+| Muse Spark Open | 60 ms | 2640 ms | $0.99 |
+
+All three pass the full suite, gradients included. The released kernels are
+`kernel_contract/recur_cands/triadic_gdn_*.py`; transcripts are in `runs_public/triadic/`.
+
+## Benchmark: 12 recurrent layers, three Meta models
+
+Twelve layers (`kernel_contract/layers/b01_gdr.py` ... `b12_two_sided.py`), each checked against its matrix
+form. Five have no existing kernel. Each cell shows verified forward ms / verified fwd+bwd ms (speedup over
+the eager loop) and the run's model cost; ✗ means nothing passed the full suite within the run's budget
+($6 Wonder, $1 Contributor, $4 Spark Open). The expert route is the fastest FLA kernel computing the same
+equation.
+
+| Layer | Expert route fwd+bwd | Wonder | Spark 1.3 Contributor | Spark Open |
+|---|---|---|---|---|
+| b01 gated delta rule | 5.5 ms | 2.2 / 16 ms (208×), $4.40 | 3.1 / 46 ms (71×), $0.04 | 5.5 / ✗, $0.85 |
+| b02 KDA | 10.6 ms | 2.4 / 22 ms (186×), $4.33 | 2.4 / 41 ms (102×), $0.03 | 3.2 / 1386 ms (3×), $0.35 |
+| b03 EDA | 12.4 ms | 4.2 / 63 ms (70×), $2.42 | 6.9 / 55 ms (81×), $0.03 | 4.0 / 55 ms (80×), $0.48 |
+| b04 EDA, per-channel | 22.6 ms | 18.5 / 79 ms (68×), $2.00 | 7.9 / 77 ms (69×), $0.03 | 4.8 / 59 ms (89×), $0.47 |
+| b05 write-erase | 22.6 ms | 12.6 / 49 ms (109×), $1.86 | 4.9 / 62 ms (86×), $0.02 | 10.8 / 348 ms (15×), $0.67 |
+| b06 value erase | none | 24.4 / 106 ms (50×), $2.16 | 13.5 / 90 ms (60×), $0.04 | 12.7 / ✗, $0.95 |
+| b07 coupled erase | 22.6 ms | 200.1 / 46 ms (117×), $4.22 | 8.5 / 64 ms (84×), $0.02 | 11.1 / 86 ms (62×), $0.74 |
+| b08 read before write | none | 12.9 / ✗, $2.46 | 4.7 / ✗, $0.04 | 3.4 / ✗, $0.56 |
+| b09 decay after write | none | 4.8 / ✗, $3.01 | 3.3 / ✗, $0.04 | 6.7 / ✗, $0.80 |
+| b10 negative eigenvalues | 5.8 ms | 2.6 / ✗, $2.42 | 3.3 / ✗, $0.04 | 4.5 / 69 ms (46×), $0.85 |
+| b11 additive write | none | 3.5 / 54 ms (97×), $2.99 | 4.0 / 57 ms (93×), $0.03 | 9.1 / 90 ms (58×), $0.70 |
+| b12 two-sided | none | 24.5 / 213 ms (26×), $3.87 | 15.5 / 98 ms (56×), $0.05 | ✗ / ✗, $0.31 |
+
+| Writer | Verified forward | Verified fwd+bwd | Model cost |
+|---|---|---|---|
+| Muse Wonder | 12/12 | 9/12 | $36.13 ($3.01 per layer) |
+| Muse Spark 1.3 Contributor | 12/12 | 9/12 | $0.39 ($0.03 per layer) |
+| Muse Spark Open | 11/12 | 7/12 | $7.73 ($0.64 per layer) |
+
+Every layer gets a verified kernel from at least one model, and every layer except b08 and b09 gets a
+verified backward. The expert kernels are still 2 to 3 times faster on the two most-tuned layers
+(b01, b02).
+
+Two harness bugs were found and fixed during the run. The checker crashed when the reference ignores an input
+(b01 and b02 take `e` and `gamma` unused); every b01/b02 backward was re-judged with the fix at no model cost
+(`rescore_*.jsonl`), and Wonder's b01 cost includes about $2 of repairs against the broken checker. An empty
+model reply crashed the loop; Spark Open's b10 run was repeated (the crashed run is kept). Regenerate the
+table with `python -m kernel_contract.bench_report runs_public/bench1 runs_public/bench1/bench_baselines.json`.
+
+## One decorator: `@muse_kernel.fast`
+
+```python
+import muse_kernel
+
+@muse_kernel.fast
+def my_layer(q, k, v, g, beta, scale):
+    ...  # the reference loop, unchanged
+```
+
+Train as usual. After two calls the decorator has seen the real shapes, dtypes and value ranges, writes them
+into a contract, and starts a background build (a Muse model plus the checker above). Once a forward+backward
+kernel passes, calls with a verified shape, dtype and value range go to the kernel; anything else still runs
+your function. Builds are cached next to the source by its hash, so editing the equation triggers a new
+build and a committed cache is reused. On `examples/muse_kernel/smoke.py` (a gated delta rule) the training
+step went from 456 ms to 8.7 ms once the kernel landed (29/29 cases, $0.03 with Spark 1.3 Contributor).
+
+With Muse Code, the project skill in `.agents/skills/fast-recurrence/` lets you ask in plain English ("this
+recurrence is too slow to train, make it fast and trainable"); Muse Code adds the decorator and leaves the
+reference loop alone.
 
 **Known limits.** Kernels that fail at K=V=129 do so by running out of shared memory. Speeds are for one
 GPU and one shape. The EDA here uses scalar decay; the paper's main form is per-channel. Muse Wonder

@@ -1,0 +1,311 @@
+```python
+import torch
+import triton
+import triton.language as tl
+
+
+@triton.jit
+def _chunk_affine_kernel(
+    k_ptr,
+    e_ptr,
+    g_ptr,
+    v_ptr,
+    beta_ptr,
+    gamma_ptr,
+    p_ptr,
+    f_ptr,
+    num_chunks,
+    T,
+    K: tl.constexpr,
+    V: tl.constexpr,
+    CHUNK: tl.constexpr,
+    BK: tl.constexpr,
+    BW: tl.constexpr,
+):
+    pid = tl.program_id(0)
+    pid_col = tl.program_id(1)
+
+    bh = pid // num_chunks
+    chunk = pid % num_chunks
+
+    rows = tl.arange(0, BK)
+    cols = tl.arange(0, BW)
+    col_idx = pid_col * BW + cols
+    row_mask = rows < K
+
+    # F columns start at zero; P columns start as identity columns.
+    acc_f = tl.zeros((BK, BW), dtype=tl.float32)
+    acc_p = tl.where(
+        rows[:, None] == col_idx[None, :], 1.0, 0.0
+    ).to(tl.float32)
+
+    k_base = k_ptr + bh * T * K
+    e_base = e_ptr + bh * T * K
+    g_base = g_ptr + bh * T * K
+    v_base = v_ptr + bh * T * V
+    beta_base = beta_ptr + bh * T
+    gamma_base = gamma_ptr + bh * T
+
+    t0 = chunk * CHUNK
+    chunk_len = tl.minimum(CHUNK, T - t0)
+
+    for i in range(chunk_len):
+        t = t0 + i
+
+        kt = tl.load(k_base + t * K + rows, mask=row_mask, other=0.0).to(tl.float32)
+        et = tl.load(e_base + t * K + rows, mask=row_mask, other=0.0).to(tl.float32)
+        gt = tl.load(g_base + t * K + rows, mask=row_mask, other=0.0).to(tl.float32)
+        vt = tl.load(
+            v_base + t * V + col_idx,
+            mask=col_idx < V,
+            other=0.0,
+        ).to(tl.float32)
+        beta = tl.load(beta_base + t)
+        gamma = tl.load(gamma_base + t)
+
+        decay = tl.exp(gt)[:, None]
+        acc_f = acc_f * decay
+        acc_p = acc_p * decay
+
+        # Delta update along k: v is the target for F, zero for P.
+        pred_f = tl.sum(acc_f * kt[:, None], axis=0)
+        pred_p = tl.sum(acc_p * kt[:, None], axis=0)
+        acc_f = acc_f + kt[:, None] * (beta * (vt - pred_f))[None, :]
+        acc_p = acc_p + kt[:, None] * (-beta * pred_p)[None, :]
+
+        # Erasure update along e, with zero target for both.
+        pred_f = tl.sum(acc_f * et[:, None], axis=0)
+        pred_p = tl.sum(acc_p * et[:, None], axis=0)
+        acc_f = acc_f - et[:, None] * (gamma * pred_f)[None, :]
+        acc_p = acc_p - et[:, None] * (gamma * pred_p)[None, :]
+
+    p_offsets = (
+        bh * num_chunks * K * K
+        + chunk * K * K
+        + rows[:, None] * K
+        + col_idx[None, :]
+    )
+    tl.store(
+        p_ptr + p_offsets,
+        acc_p,
+        mask=row_mask[:, None] & (col_idx[None, :] < K),
+    )
+
+    f_offsets = (
+        bh * num_chunks * K * V
+        + chunk * K * V
+        + rows[:, None] * V
+        + col_idx[None, :]
+    )
+    tl.store(
+        f_ptr + f_offsets,
+        acc_f,
+        mask=row_mask[:, None] & (col_idx[None, :] < V),
+    )
+
+
+@triton.jit
+def _chunk_scan_kernel(
+    p_ptr,
+    f_ptr,
+    s_ptr,
+    num_chunks,
+    K: tl.constexpr,
+    V: tl.constexpr,
+    BK: tl.constexpr,
+    BV: tl.constexpr,
+):
+    bh = tl.program_id(0)
+    pid_col = tl.program_id(1)
+
+    rows = tl.arange(0, BK)
+    kcols = tl.arange(0, BK)
+    cols = tl.arange(0, BV)
+    col_idx = pid_col * BV + cols
+    row_mask = rows < K
+    col_mask = col_idx < V
+
+    acc = tl.zeros((BK, BV), dtype=tl.float32)
+
+    p_bh = bh * num_chunks * K * K
+    f_bh = bh * num_chunks * K * V
+    s_bh = bh * num_chunks * K * V
+
+    for chunk in range(num_chunks):
+        # Entering state for this chunk.
+        s_offsets = s_bh + chunk * K * V + rows[:, None] * V + col_idx[None, :]
+        tl.store(
+            s_ptr + s_offsets,
+            acc,
+            mask=row_mask[:, None] & col_mask[None, :],
+        )
+
+        p_offsets = p_bh + chunk * K * K + rows[:, None] * K + kcols[None, :]
+        p_mat = tl.load(
+            p_ptr + p_offsets,
+            mask=row_mask[:, None] & (kcols[None, :] < K),
+            other=0.0,
+        ).to(tl.float32)
+
+        f_offsets = f_bh + chunk * K * V + rows[:, None] * V + col_idx[None, :]
+        force = tl.load(
+            f_ptr + f_offsets,
+            mask=row_mask[:, None] & col_mask[None, :],
+            other=0.0,
+        ).to(tl.float32)
+
+        # TF32 tensor-core matmul: ample accuracy for the 2e-2 tolerance,
+        # and far faster than the previous IEEE fp32 128x32 dot.
+        acc = tl.dot(p_mat, acc, input_precision="tf32") + force
+
+
+@triton.jit
+def _chunk_output_kernel(
+    q_ptr,
+    k_ptr,
+    e_ptr,
+    g_ptr,
+    v_ptr,
+    beta_ptr,
+    gamma_ptr,
+    s_ptr,
+    out_ptr,
+    num_chunks,
+    T,
+    scale,
+    K: tl.constexpr,
+    V: tl.constexpr,
+    CHUNK: tl.constexpr,
+    BK: tl.constexpr,
+    BW: tl.constexpr,
+):
+    pid = tl.program_id(0)
+    pid_col = tl.program_id(1)
+
+    bh = pid // num_chunks
+    chunk = pid % num_chunks
+
+    rows = tl.arange(0, BK)
+    cols = tl.arange(0, BW)
+    col_idx = pid_col * BW + cols
+    row_mask = rows < K
+    col_mask = col_idx < V
+
+    s_offsets = (
+        bh * num_chunks * K * V
+        + chunk * K * V
+        + rows[:, None] * V
+        + col_idx[None, :]
+    )
+    acc = tl.load(
+        s_ptr + s_offsets,
+        mask=row_mask[:, None] & col_mask[None, :],
+        other=0.0,
+    ).to(tl.float32)
+
+    q_base = q_ptr + bh * T * K
+    k_base = k_ptr + bh * T * K
+    e_base = e_ptr + bh * T * K
+    g_base = g_ptr + bh * T * K
+    v_base = v_ptr + bh * T * V
+    beta_base = beta_ptr + bh * T
+    gamma_base = gamma_ptr + bh * T
+    out_base = out_ptr + bh * T * V
+
+    t0 = chunk * CHUNK
+    chunk_len = tl.minimum(CHUNK, T - t0)
+
+    for i in range(chunk_len):
+        t = t0 + i
+
+        kt = tl.load(k_base + t * K + rows, mask=row_mask, other=0.0).to(tl.float32)
+        et = tl.load(e_base + t * K + rows, mask=row_mask, other=0.0).to(tl.float32)
+        gt = tl.load(g_base + t * K + rows, mask=row_mask, other=0.0).to(tl.float32)
+        vt = tl.load(v_base + t * V + col_idx, mask=col_mask, other=0.0).to(tl.float32)
+        beta = tl.load(beta_base + t)
+        gamma = tl.load(gamma_base + t)
+
+        acc = acc * tl.exp(gt)[:, None]
+
+        pred = tl.sum(acc * kt[:, None], axis=0)
+        acc = acc + kt[:, None] * (beta * (vt - pred))[None, :]
+
+        pred_e = tl.sum(acc * et[:, None], axis=0)
+        acc = acc - et[:, None] * (gamma * pred_e)[None, :]
+
+        qt = tl.load(q_base + t * K + rows, mask=row_mask, other=0.0).to(tl.float32)
+        out = tl.sum(acc * (qt * scale)[:, None], axis=0)
+        tl.store(out_base + t * V + col_idx, out, mask=col_mask)
+
+
+def kernel_function(q, k, v, e, g, beta, gamma, scale):
+    B, H, T, K = q.shape
+    V = v.shape[-1]
+
+    out = torch.empty((B, H, T, V), device=q.device, dtype=torch.float32)
+    if B == 0 or H == 0 or T == 0 or V == 0:
+        return out
+    if K == 0:
+        out.zero_()
+        return out
+
+    BH = B * H
+    BK: int = max(16, triton.next_power_of_2(K))
+    # Larger chunks: 8 chunks at T=2048 instead of 32, shrinking both the
+    # scan length and the P/F/S buffers by 4x.
+    CHUNK: int = 256 if T > 256 else T
+    num_chunks = (T + CHUNK - 1) // CHUNK
+
+    q2 = q.contiguous().reshape(BH, T, K)
+    k2 = k.contiguous().reshape(BH, T, K)
+    v2 = v.contiguous().reshape(BH, T, V)
+    e2 = e.contiguous().reshape(BH, T, K)
+    g2 = g.contiguous().reshape(BH, T, K)
+    beta2 = beta.contiguous().reshape(BH, T)
+    gamma2 = gamma.contiguous().reshape(BH, T)
+
+    if num_chunks == 1:
+        # Single chunk: entering state is the zero initial state.
+        s_buf = torch.zeros((BH, 1, K, V), device=q.device, dtype=torch.float32)
+    else:
+        p_buf = torch.empty((BH, num_chunks, K, K), device=q.device, dtype=torch.float32)
+        f_buf = torch.empty((BH, num_chunks, K, V), device=q.device, dtype=torch.float32)
+        s_buf = torch.empty((BH, num_chunks, K, V), device=q.device, dtype=torch.float32)
+
+        # One launch computes both F (zero initial state, v targets) and
+        # P (identity initial state, zero targets), sharing all k/e/g loads.
+        BW_A: int = 32
+        grid_a = (BH * num_chunks, triton.cdiv(max(K, V), BW_A))
+        _chunk_affine_kernel[grid_a](
+            k2, e2, g2, v2, beta2, gamma2, p_buf, f_buf,
+            num_chunks, T,
+            K, V, CHUNK, BK, BW_A,
+            num_warps=8,
+            num_stages=2,
+        )
+
+        # One program per (BH, full 128-wide V tile): large tensor-core dots.
+        BV_S: int = 128
+        grid_s = (BH, triton.cdiv(V, BV_S))
+        _chunk_scan_kernel[grid_s](
+            p_buf, f_buf, s_buf,
+            num_chunks,
+            K, V, BK, BV_S,
+            num_warps=16,
+            num_stages=2,
+        )
+
+    BW_O: int = 64
+    grid_o = (BH * num_chunks, triton.cdiv(V, BW_O))
+    _chunk_output_kernel[grid_o](
+        q2, k2, e2, g2, v2, beta2, gamma2, s_buf, out,
+        num_chunks, T, float(scale),
+        K, V, CHUNK, BK, BW_O,
+        num_warps=8,
+        num_stages=2,
+    )
+
+    return out
+```
+
+The scan bottleneck is attacked three ways: the chunk length grows from 64 to 256 (4× fewer scan steps and 4× smaller transition buffers), the scan now uses full 128-wide TF32 tensor-core dots instead of 128×32 IEEE fp32 dots, and the separate P and F affine launches are fused into one kernel that shares all k/e/g loads and decay computation. Intra-chunk replay remains exact fp32, so the only added approximation is TF32 in the cross-chunk state propagation, which should sit well within the 2e-2 tolerance. Uncertainty remains around register pressure in the fused affine kernel (two accumulators) and the 16-warp scan on Triton 3.5, which I cannot benchmark here.

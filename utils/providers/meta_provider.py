@@ -14,8 +14,13 @@ load_dotenv()
 
 REASONING_EFFORTS = ("minimal", "low", "medium", "high", "xhigh")
 
-# USD per million tokens (input, output); reasoning tokens bill as output.
-META_PRICES = {"muse-spark": (1.25, 4.25)}
+# USD per million tokens (input, cached input, output); reasoning tokens bill as output.
+META_PRICES = {
+    "muse-wonder": (4.00, 0.20, 20.00),
+    "muse-spark-1.3-contributor": (0.10, 0.002, 0.20),
+    "muse-spark-1.2-contributor": (0.10, 0.002, 0.20),
+    "muse-spark": (1.25, 0.15, 4.25),
+}
 LEDGER = Path(os.environ.get("META_SPEND_LEDGER", Path.home() / ".kernelagent_meta_spend.json"))
 
 
@@ -31,9 +36,11 @@ def spent() -> float:
 
 
 def _record(model_name: str, usage: dict | None) -> float:
-    price_in, price_out = next(p for k, p in META_PRICES.items() if model_name.startswith(k))
+    price_in, price_cached, price_out = next(p for k, p in META_PRICES.items() if model_name.startswith(k))
     usage = usage or {}
-    cost = (usage.get("prompt_tokens", 0) * price_in + usage.get("completion_tokens", 0) * price_out) / 1e6
+    cached = (usage.get("prompt_tokens_details") or {}).get("cached_tokens") or 0
+    cost = ((usage.get("prompt_tokens", 0) - cached) * price_in + cached * price_cached
+            + usage.get("completion_tokens", 0) * price_out) / 1e6
     total = spent() + cost
     LEDGER.write_text(json.dumps({"usd": total}))
     return cost

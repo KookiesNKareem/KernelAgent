@@ -24,6 +24,16 @@ from utils.providers.meta_provider import MetaProvider, BasetenProvider
 # Registry of all available models (external/OSS version)
 AVAILABLE_MODELS = [
     ModelConfig(
+        name="muse-wonder-1.0",
+        provider_classes=[MetaProvider],
+        description="Meta Muse Wonder over the Meta Model API",
+    ),
+    ModelConfig(
+        name="muse-spark-1.3-contributor",
+        provider_classes=[MetaProvider],
+        description="Muse Spark 1.3 in Contributor mode (content used for training)",
+    ),
+    ModelConfig(
         name="muse-spark-1.3",
         provider_classes=[MetaProvider],
         description="Meta Muse Spark 1.3 over the Meta Model API",

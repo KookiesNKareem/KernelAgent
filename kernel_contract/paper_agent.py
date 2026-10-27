@@ -305,6 +305,14 @@ class Run:
     def go(self):
         L = dict(LAYERS[self.a.layer])
         L["eager_ms"] = self.a.eager_ms or L["eager_ms"]
+        if self.a.repair_from:
+            self.replay(self.a.repair_from)
+            path = next(self.out.glob(f"{self.a.repair_from:02d}_*.py"))
+            res = self.evaluate(path, self.a.grads)
+            path, res = self.until_correct(path, res, self.a.grads, self.a.repairs,
+                                           "backward" if self.a.grads else "kernel")
+            return self.log(event="done", stage="repair", ok=not res["blocking"], path=str(path), ms=res.get("ms"),
+                            run_usd=spent(self.provider.ledger) - self.start_usd)
         if self.a.resume_bwd:
             self.replay(self.a.resume_bwd)
             path = next(self.out.glob(f"{self.a.resume_bwd:02d}_*.py"))
@@ -343,6 +351,8 @@ def main():
     ap.add_argument("--bwd-opt-rounds", type=int, default=1)
     ap.add_argument("--max-usd", type=float, default=15.0)
     ap.add_argument("--max-tokens", type=int, default=64000)
+    ap.add_argument("--repair-from", type=int, help="replay the first N calls of --out and repair call N")
+    ap.add_argument("--grads", action="store_true")
     ap.add_argument("--resume-bwd", type=int, help="replay the first N calls of --out, take call N as the forward")
     Run(ap.parse_args()).go()
 

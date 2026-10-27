@@ -108,6 +108,7 @@ def run_case(spec: OpSpec, kernel, case: dict, device: str) -> dict:
         return {"outcome": "refuse", "reason": msg[:300]}
     fwd = compare(out, ref, truth, any_float=spec.flags.get("any_float_output", False),
                   normwise=spec.flags.get("normwise_rtol"))
+    fwd["truth_dtype"] = str(truth.dtype)
     if fwd["outcome"] != "accept" or not spec.flags.get("check_grads"):
         return fwd
     return check_grads(spec, kernel, fresh, fn, case, device, fwd)

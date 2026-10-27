@@ -1,0 +1,36 @@
+[muse_kernel] queued /workspace/recurrence/.muse_kernels/remote/reference_80d4dce92143eb856dc192a9
+{"phase": "captured", "hash": "80d4dce92143eb856dc192a9", "cache": "/workspace/recurrence/.muse_kernels/remote/reference_80d4dce92143eb856dc192a9"}
+{"phase": "queued"}
+{"phase": "building"}
+[muse_kernel] reference: verified kernel in use (27/27 cases, 0.5 ms fwd+bwd vs 8 ms reference forward, $0.01)
+{"step": 0, "loss": 5.39324951171875, "step_ms": 323.39400914497674, "recovered": false, "calls": {"reference": 2, "kernel": 1}}
+{"step": 1, "loss": 5.274388790130615, "step_ms": 5.301284836605191, "recovered": false, "calls": {"reference": 2, "kernel": 2}}
+{"step": 2, "loss": 5.225710868835449, "step_ms": 4.866200033575296, "recovered": false, "calls": {"reference": 2, "kernel": 3}}
+{"step": 3, "loss": 5.107668399810791, "step_ms": 5.089206155389547, "recovered": false, "calls": {"reference": 2, "kernel": 4}}
+{"step": 4, "loss": 5.09239387512207, "step_ms": 5.548456916585565, "recovered": false, "calls": {"reference": 2, "kernel": 5}}
+{"step": 5, "loss": 4.93619441986084, "step_ms": 5.515678087249398, "recovered": false, "calls": {"reference": 2, "kernel": 6}}
+{"step": 6, "loss": 4.899189472198486, "step_ms": 6.605906877666712, "recovered": false, "calls": {"reference": 2, "kernel": 7}}
+{"step": 7, "loss": 4.71232795715332, "step_ms": 6.662482162937522, "recovered": false, "calls": {"reference": 2, "kernel": 8}}
+{"step": 8, "loss": 4.655327320098877, "step_ms": 6.62989285774529, "recovered": false, "calls": {"reference": 2, "kernel": 9}}
+{"step": 9, "loss": 4.442707538604736, "step_ms": 6.642631953582168, "recovered": false, "calls": {"reference": 2, "kernel": 10}}
+{"step": 10, "loss": 4.476712226867676, "step_ms": 6.767390063032508, "recovered": false, "calls": {"reference": 2, "kernel": 11}}
+{"step": 11, "loss": 4.341142177581787, "step_ms": 6.648391019552946, "recovered": false, "calls": {"reference": 2, "kernel": 12}}
+{"step": 12, "loss": 4.213886260986328, "step_ms": 6.6174049861729145, "recovered": false, "calls": {"reference": 2, "kernel": 13}}
+{"step": 13, "loss": 4.294949531555176, "step_ms": 6.615611957386136, "recovered": false, "calls": {"reference": 2, "kernel": 14}}
+{"step": 14, "loss": 4.320594310760498, "step_ms": 6.603403016924858, "recovered": false, "calls": {"reference": 2, "kernel": 15}}
+{"step": 15, "loss": 4.184717178344727, "step_ms": 6.647309986874461, "recovered": false, "calls": {"reference": 2, "kernel": 16}}
+{"step": 16, "loss": 3.9462997913360596, "step_ms": 6.744035053998232, "recovered": false, "calls": {"reference": 2, "kernel": 17}}
+{"step": 17, "loss": 4.453012943267822, "step_ms": 6.788082187995315, "recovered": false, "calls": {"reference": 2, "kernel": 18}}
+{"step": 18, "loss": 3.8419570922851562, "step_ms": 6.631324999034405, "recovered": false, "calls": {"reference": 2, "kernel": 19}}
+{"step": 19, "loss": 3.855133533477783, "step_ms": 6.631555035710335, "recovered": false, "calls": {"reference": 2, "kernel": 20}}
+{"step": 20, "loss": 4.115995407104492, "step_ms": 6.6997690591961145, "recovered": false, "calls": {"reference": 2, "kernel": 21}}
+{"step": 21, "loss": 3.73744535446167, "step_ms": 6.798597984015942, "recovered": false, "calls": {"reference": 2, "kernel": 22}}
+{"step": 22, "loss": 3.696622848510742, "step_ms": 6.7662091460078955, "recovered": false, "calls": {"reference": 2, "kernel": 23}}
+{"step": 23, "loss": 3.775453567504883, "step_ms": 6.593037862330675, "recovered": false, "calls": {"reference": 2, "kernel": 24}}
+{"step": 24, "loss": 3.854495048522949, "step_ms": 6.625897018238902, "recovered": false, "calls": {"reference": 2, "kernel": 25}}
+{"step": 25, "loss": 3.5835490226745605, "step_ms": 6.81402999907732, "recovered": false, "calls": {"reference": 2, "kernel": 26}}
+{"step": 26, "loss": 3.4594759941101074, "step_ms": 6.761040072888136, "recovered": false, "calls": {"reference": 2, "kernel": 27}}
+{"step": 27, "loss": 3.47232985496521, "step_ms": 6.756643997505307, "recovered": false, "calls": {"reference": 2, "kernel": 28}}
+{"step": 28, "loss": 3.5369937419891357, "step_ms": 6.7063989117741585, "recovered": false, "calls": {"reference": 2, "kernel": 29}}
+{"step": 29, "loss": 3.584097385406494, "step_ms": 6.611867109313607, "recovered": false, "calls": {"reference": 2, "kernel": 30}}
+{"phase": "complete", "status": {"state": "ready", "updated": 1793134384.60165, "started": 1793133825.346082, "reference_ms": 8.123019011691213, "model": "muse-spark-1.3-contributor", "attempt": 1, "holdout_passed": true, "kernel": "kernel.py", "kernel_sha256": "e8a3459f7c61cfe9d0ef2121f10385b28241e0f48542ca626222f978413781ae", "coverage": {"total": 27, "accept": 27, "wrong": 0, "crash": 0, "refuse": 0, "skip": 0, "unsupported": [], "skipped": [], "all_cases_passed": true}, "fwd_bwd_ms": 0.5114373983815312, "usd": 0.012247062000000001, "verified_cases": 27, "cases": 27, "calls": {"reference": 2, "kernel": 30}}}

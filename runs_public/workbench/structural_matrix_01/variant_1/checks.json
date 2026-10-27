@@ -1,0 +1,240 @@
+{
+  "event": "eval",
+  "path": "/Users/kareemfareed/dev/kernelagent-hack/runs/workbench/structural_matrix_01/variant_1/run/02_bwd.py",
+  "grads": true,
+  "outcome": "accept",
+  "blocking": [],
+  "ms": 0.4891257965937257,
+  "results": [
+    {
+      "name": "observed",
+      "axis": "seed",
+      "outcome": "accept",
+      "err": 3.783855284655857e-08,
+      "torch_err": 4.7420583293433793e-08,
+      "scale": 0.36517733518725193
+    },
+    {
+      "name": "seed1",
+      "axis": "seed",
+      "outcome": "accept",
+      "err": 3.149725380513502e-08,
+      "torch_err": 3.8675547778255215e-08,
+      "scale": 0.26546869817680424
+    },
+    {
+      "name": "seed2",
+      "axis": "seed",
+      "outcome": "accept",
+      "err": 3.189326300279127e-08,
+      "torch_err": 4.007888737556087e-08,
+      "scale": 0.29146550992469494
+    },
+    {
+      "name": "scale_up",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 0.02622647539828904,
+      "torch_err": 0.03365315237897448,
+      "scale": 365975.4558165368
+    },
+    {
+      "name": "scale_down",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 3.505327638176221e-14,
+      "torch_err": 6.258430546889814e-14,
+      "scale": 3.6576695541719215e-07
+    },
+    {
+      "name": "shift",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 0.0009405087903360254,
+      "torch_err": 0.0009931944969139295,
+      "scale": 5705.531510796009
+    },
+    {
+      "name": "negative",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 1.9716607035924483e-07,
+      "torch_err": 2.0056440841464962e-07,
+      "scale": 1.8719171978400255
+    },
+    {
+      "name": "half_zero",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 1.7293534770868035e-08,
+      "torch_err": 2.0345933687826445e-08,
+      "scale": 0.18910310533311692
+    },
+    {
+      "name": "constant",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 1.3611824223325186e-08,
+      "torch_err": 1.5644865430930466e-08,
+      "scale": 0.1414202358819998
+    },
+    {
+      "name": "scale_mid",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 4.9394591769669205e-05,
+      "torch_err": 5.9343584325688425e-05,
+      "scale": 501.1875103489981
+    },
+    {
+      "name": "shift_neg",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 0.0006659082409896655,
+      "torch_err": 0.0009180220085909241,
+      "scale": 5693.465948313064
+    },
+    {
+      "name": "s0=33",
+      "axis": "sizes",
+      "outcome": "accept",
+      "err": 4.1398896422073506e-08,
+      "torch_err": 3.708528772961017e-08,
+      "scale": 0.291090221135048
+    },
+    {
+      "name": "s0=65",
+      "axis": "sizes",
+      "outcome": "accept",
+      "err": 3.1400658462299447e-08,
+      "torch_err": 3.4923632832861706e-08,
+      "scale": 0.35629587989143596
+    },
+    {
+      "name": "s1=9",
+      "axis": "sizes",
+      "outcome": "accept",
+      "err": 2.6408793263321684e-08,
+      "torch_err": 3.802572656752545e-08,
+      "scale": 0.3448621846457822
+    },
+    {
+      "name": "s1=17",
+      "axis": "sizes",
+      "outcome": "accept",
+      "err": 3.60926475928558e-08,
+      "torch_err": 3.786193975008345e-08,
+      "scale": 0.3747180992113166
+    },
+    {
+      "name": "decay_none",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 9.722209309837027e-08,
+      "torch_err": 1.1720935583214853e-07,
+      "scale": 0.617121599578698
+    },
+    {
+      "name": "decay_strong",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 3.7153168652714896e-08,
+      "torch_err": 3.7153168652714896e-08,
+      "scale": 0.30590554336746123
+    },
+    {
+      "name": "gate_edges",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 4.1134033401668546e-08,
+      "torch_err": 4.0951850133197354e-08,
+      "scale": 0.3846559767779927
+    },
+    {
+      "name": "gate_typical",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 6.923691177329605e-08,
+      "torch_err": 5.6664251082971795e-08,
+      "scale": 0.4304992873216106
+    },
+    {
+      "name": "gate_high",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 3.58195300087516e-08,
+      "torch_err": 4.782261020519485e-08,
+      "scale": 0.38585367758262235
+    },
+    {
+      "name": "gate_mid",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 3.1575048131671224e-08,
+      "torch_err": 3.766877348931885e-08,
+      "scale": 0.3470849298597048
+    },
+    {
+      "name": "contiguous",
+      "axis": "layout",
+      "outcome": "accept",
+      "err": 3.783855284655857e-08,
+      "torch_err": 4.7420583293433793e-08,
+      "scale": 0.36517733518725193
+    },
+    {
+      "name": "strided2",
+      "axis": "layout",
+      "outcome": "accept",
+      "err": 3.783855284655857e-08,
+      "torch_err": 4.7420583293433793e-08,
+      "scale": 0.36517733518725193
+    },
+    {
+      "name": "strided3_off1",
+      "axis": "layout",
+      "outcome": "accept",
+      "err": 3.783855284655857e-08,
+      "torch_err": 4.7420583293433793e-08,
+      "scale": 0.36517733518725193
+    },
+    {
+      "name": "transposed",
+      "axis": "layout",
+      "outcome": "accept",
+      "err": 3.783855284655857e-08,
+      "torch_err": 4.7420583293433793e-08,
+      "scale": 0.36517733518725193
+    },
+    {
+      "name": "leading_swap",
+      "axis": "layout",
+      "outcome": "accept",
+      "err": 3.783855284655857e-08,
+      "torch_err": 4.7420583293433793e-08,
+      "scale": 0.36517733518725193
+    },
+    {
+      "name": "compound",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 2.6594597846846257e-08,
+      "torch_err": 2.35608477172633e-08,
+      "scale": 0.3937314839293313
+    }
+  ],
+  "profile": null,
+  "coverage": {
+    "total": 27,
+    "accept": 27,
+    "wrong": 0,
+    "crash": 0,
+    "refuse": 0,
+    "skip": 0,
+    "unsupported": [],
+    "skipped": [],
+    "all_cases_passed": true
+  },
+  "sha256": "06831963549d01ddcb2ff8c59953c132cb5d2b212f3f74ebe9308b885e5d8ff2",
+  "t": 1793132599.8417978
+}

@@ -1,0 +1,91 @@
+{
+  "seed": 286108722,
+  "policy": "sampled after candidate selection; no repair feedback",
+  "cases": [
+    {
+      "name": "holdout_0",
+      "axis": "holdout",
+      "seed": 1778119898,
+      "layout": "contiguous",
+      "stress": "gate_typical"
+    },
+    {
+      "name": "holdout_1",
+      "axis": "holdout",
+      "seed": 241653289,
+      "layout": "strided2",
+      "stress": "gate_mid"
+    },
+    {
+      "name": "holdout_2",
+      "axis": "holdout",
+      "seed": 1369116145,
+      "layout": "strided3_off1",
+      "stress": "gate_high"
+    },
+    {
+      "name": "holdout_3",
+      "axis": "holdout",
+      "seed": 565445248,
+      "layout": "transposed",
+      "stress": "decay_strong"
+    },
+    {
+      "name": "holdout_4",
+      "axis": "holdout",
+      "seed": 397710599,
+      "layout": "leading_swap",
+      "stress": "decay_none"
+    },
+    {
+      "name": "holdout_5",
+      "axis": "holdout",
+      "seed": 1535596998,
+      "layout": "contiguous",
+      "stress": "gate_edges"
+    },
+    {
+      "name": "holdout_6",
+      "axis": "holdout",
+      "seed": 301428527,
+      "layout": "strided2",
+      "stress": "gate_typical"
+    },
+    {
+      "name": "holdout_7",
+      "axis": "holdout",
+      "seed": 204058174,
+      "layout": "strided3_off1",
+      "stress": "gate_mid"
+    },
+    {
+      "name": "holdout_8",
+      "axis": "holdout",
+      "seed": 1890773497,
+      "layout": "transposed",
+      "stress": "gate_high"
+    },
+    {
+      "name": "holdout_9",
+      "axis": "holdout",
+      "seed": 2142453835,
+      "layout": "leading_swap",
+      "stress": "decay_strong"
+    },
+    {
+      "name": "holdout_10",
+      "axis": "holdout",
+      "seed": 255356218,
+      "layout": "contiguous",
+      "stress": "decay_none"
+    },
+    {
+      "name": "holdout_11",
+      "axis": "holdout",
+      "seed": 987253398,
+      "layout": "strided2",
+      "stress": "gate_edges"
+    }
+  ],
+  "candidate_sha256": "00f2099f4c8d46a16a77a2822fd4be8f1561faa22fac0907bca9a7e07ba4d45a"
+}

@@ -1,0 +1,240 @@
+{
+  "event": "eval",
+  "path": "/Users/kareemfareed/dev/kernelagent-hack/runs/workbench/structural_matrix_01/variant_2/run/03_repair_bwd.py",
+  "grads": true,
+  "outcome": "accept",
+  "blocking": [],
+  "ms": 0.5317969946190715,
+  "results": [
+    {
+      "name": "observed",
+      "axis": "seed",
+      "outcome": "accept",
+      "err": 3.762610900626129e-08,
+      "torch_err": 3.248061813954095e-08,
+      "scale": 0.3539542582646347
+    },
+    {
+      "name": "seed1",
+      "axis": "seed",
+      "outcome": "accept",
+      "err": 3.207228482793312e-08,
+      "torch_err": 3.400258413721602e-08,
+      "scale": 0.26462555309255975
+    },
+    {
+      "name": "seed2",
+      "axis": "seed",
+      "outcome": "accept",
+      "err": 3.314651844665839e-08,
+      "torch_err": 3.6440733208742415e-08,
+      "scale": 0.28328409751806255
+    },
+    {
+      "name": "scale_up",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 0.034906508633866906,
+      "torch_err": 0.05212104559177533,
+      "scale": 354252.85439551005
+    },
+    {
+      "name": "scale_down",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 3.1931782253029865e-14,
+      "torch_err": 2.995381766231391e-14,
+      "scale": 3.554532789086399e-07
+    },
+    {
+      "name": "shift",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 0.0008471573528368026,
+      "torch_err": 0.0008133841347444104,
+      "scale": 5785.292218596636
+    },
+    {
+      "name": "negative",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 2.0632752706362112e-07,
+      "torch_err": 2.0241086717831536e-07,
+      "scale": 1.8244058752743406
+    },
+    {
+      "name": "half_zero",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 1.7496629395319374e-08,
+      "torch_err": 2.7089927336076958e-08,
+      "scale": 0.18702139707574306
+    },
+    {
+      "name": "constant",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 1.2974636975915388e-08,
+      "torch_err": 1.3772654378074733e-08,
+      "scale": 0.143879457570402
+    },
+    {
+      "name": "scale_mid",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 4.9846376327877806e-05,
+      "torch_err": 6.36744924378263e-05,
+      "scale": 485.4594876338041
+    },
+    {
+      "name": "shift_neg",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 0.0007808918935552356,
+      "torch_err": 0.0009564421989125549,
+      "scale": 5783.246509052737
+    },
+    {
+      "name": "s0=33",
+      "axis": "sizes",
+      "outcome": "accept",
+      "err": 3.6456148155838974e-08,
+      "torch_err": 5.2767841929313164e-08,
+      "scale": 0.27999191823253233
+    },
+    {
+      "name": "s0=65",
+      "axis": "sizes",
+      "outcome": "accept",
+      "err": 4.569405787080427e-08,
+      "torch_err": 3.6390793045626424e-08,
+      "scale": 0.36141232791016475
+    },
+    {
+      "name": "s1=9",
+      "axis": "sizes",
+      "outcome": "accept",
+      "err": 3.1814252954287525e-08,
+      "torch_err": 2.387108763435286e-08,
+      "scale": 0.3652583099153751
+    },
+    {
+      "name": "s1=17",
+      "axis": "sizes",
+      "outcome": "accept",
+      "err": 4.025747038505223e-08,
+      "torch_err": 3.968465694947909e-08,
+      "scale": 0.3518128873900551
+    },
+    {
+      "name": "decay_none",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 8.12115069637187e-08,
+      "torch_err": 9.68628245390235e-08,
+      "scale": 0.6038970787555085
+    },
+    {
+      "name": "decay_strong",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 3.956378458180865e-08,
+      "torch_err": 4.337991188485546e-08,
+      "scale": 0.30417117472026467
+    },
+    {
+      "name": "gate_edges",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 3.7227296870168125e-08,
+      "torch_err": 5.407620307096295e-08,
+      "scale": 0.3827835784527257
+    },
+    {
+      "name": "gate_typical",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 6.873689584185882e-08,
+      "torch_err": 6.453728729205466e-08,
+      "scale": 0.4173020351063598
+    },
+    {
+      "name": "gate_high",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 4.618714438686666e-08,
+      "torch_err": 5.4782313463341836e-08,
+      "scale": 0.3990635021214643
+    },
+    {
+      "name": "gate_mid",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 4.1932336158900796e-08,
+      "torch_err": 3.185059482824215e-08,
+      "scale": 0.3359088124935544
+    },
+    {
+      "name": "contiguous",
+      "axis": "layout",
+      "outcome": "accept",
+      "err": 3.762610900626129e-08,
+      "torch_err": 3.248061813954095e-08,
+      "scale": 0.3539542582646347
+    },
+    {
+      "name": "strided2",
+      "axis": "layout",
+      "outcome": "accept",
+      "err": 3.762610900626129e-08,
+      "torch_err": 3.248061813954095e-08,
+      "scale": 0.3539542582646347
+    },
+    {
+      "name": "strided3_off1",
+      "axis": "layout",
+      "outcome": "accept",
+      "err": 3.762610900626129e-08,
+      "torch_err": 3.248061813954095e-08,
+      "scale": 0.3539542582646347
+    },
+    {
+      "name": "transposed",
+      "axis": "layout",
+      "outcome": "accept",
+      "err": 3.762610900626129e-08,
+      "torch_err": 3.248061813954095e-08,
+      "scale": 0.3539542582646347
+    },
+    {
+      "name": "leading_swap",
+      "axis": "layout",
+      "outcome": "accept",
+      "err": 3.762610900626129e-08,
+      "torch_err": 3.248061813954095e-08,
+      "scale": 0.3539542582646347
+    },
+    {
+      "name": "compound",
+      "axis": "values",
+      "outcome": "accept",
+      "err": 3.681166738100927e-08,
+      "torch_err": 3.681166738100927e-08,
+      "scale": 0.39202119202971253
+    }
+  ],
+  "profile": null,
+  "coverage": {
+    "total": 27,
+    "accept": 27,
+    "wrong": 0,
+    "crash": 0,
+    "refuse": 0,
+    "skip": 0,
+    "unsupported": [],
+    "skipped": [],
+    "all_cases_passed": true
+  },
+  "sha256": "00f2099f4c8d46a16a77a2822fd4be8f1561faa22fac0907bca9a7e07ba4d45a",
+  "t": 1793133228.3731709
+}

@@ -1,12 +1,42 @@
-# Change the equation, keep training
+# Recurrence — change the model, keep training
 
 **Built during the Meta Global AI Developer Hackathon (Oct 26 to Nov 4, 2026).** Everything under
 `kernel_contract/` and every commit after upstream `e064717` was written during the event; the rest of
 this repository is upstream [KernelAgent](https://github.com/meta-pytorch/KernelAgent), described below.
 
+The workbench takes a researcher-edited PyTorch recurrence through contract capture, Meta-model kernel generation,
+forward/backward checking, fresh post-selection evaluation, paired training, and reproducible export. Compare up to
+three **structural model variants** under one shared model budget. Changing erase direction, update order or readout
+changes the computation; a scalar sweep is not presented as a new architecture.
+
+The main researcher interface is a code editor:
+
+```python
+@muse_kernel.fast
+def reference(q, k, v, e, g, beta, gamma, scale):
+    # Your PyTorch recurrence, including the structural model edit.
+    ...
+```
+
+[Open the runnable training example](examples/muse_kernel/research.py) and
+[the editor demo guide](docs/EDITOR_DEMO.md), with [executed validation receipts](docs/EDITOR_RESULTS.md). The decorator captures real calls and guards kernel reuse;
+the workbench displays evidence and compares experiments. Use `muse_kernel.train_step` when you need
+recovery from an ordinary backward failure before the optimizer updates parameters.
+
+```bash
+pip install -e ".[research]"  # CUDA Linux; the dashboard itself can run on macOS
+recurrence-workbench --remote "ssh gpu-host" --remote-dir /workspace/recurrence
+```
+
+![Completed three-variant workbench run with a genuine rejected gradient and model repair](assets/workbench.png)
+
+The GPU host needs the same installed source. Model API keys stay on the machine running the workbench.
+See [the workbench guide](docs/WORKBENCH.md), [validation protocol](docs/VALIDATION.md), and
+[event contribution manifest](docs/HACKATHON_CONTRIBUTIONS.md). New controlled results are in [the three-variant report](docs/WORKBENCH_RESULTS.md). The measurements below are historical;
+they predate the workbench's fresh holdout and multi-batch training protocol unless explicitly marked otherwise.
+
 New sequence layers (delta rules, erase/write variants, gated recurrences) ship as a slow Python loop over
-time. Training with that loop takes days, and a hand-written chunked kernel takes an expert weeks per
-layer, so most equation edits are never trained at scale. This project hands a Meta model the equation and
+time. At larger shapes the loop can be slow or exceed memory; implementing an efficient backward pass adds further work. This project hands a Meta model the equation and
 the slow loop and gets back a chunked Triton forward **and backward** that a training run can use, checked
 by an independent contract the model does not control.
 
@@ -18,7 +48,7 @@ by an independent contract the model does not control.
   accepts" and "use your own Triton". No algorithm hints, no expert timings.
 - **Feedback:** only the checker's counterexamples and the GPU profile. No human edits.
 - **Checker:** float64 ground truth; fresh seeds, value scales and shifts, size changes (odd head dims,
-  ragged T), strided, transposed and offset layouts, decay and gate values across their whole range
+  ragged T), strided, transposed and offset layouts, sampled decay and gate values across several ranges
   (edges, typical, high, mid), a compound case, the exact timed and training shapes drawn at the timing
   distribution, K != V, and every gradient against float64 autograd. 41 cases per kernel.
 
@@ -50,12 +80,11 @@ Wonder's kernel is 49x faster per step than the eager loop and 7.3x faster than 
 The kernel's loss tracks the reference within 0.005 over the first 10 steps (0.038 max over 300, the same
 as the expert route), and every parameter gradient matches the reference to within 0.9% on step one.
 
-The value-side erase, S_t = (I - beta k k^T) D S_{t-1} (I - gamma u u^T) + beta k v^T, has no reduction to an
-existing kernel. Wonder's chunked forward and backward passed the original suite at 8.2 / 29.6 ms, but they
+The value-side erase, S_t = (I - beta k k^T) D S_{t-1} (I - gamma u u^T) + beta k v^T, has no applicable expert reduction in this benchmark implementation. Wonder's chunked forward and backward passed the original suite at 8.2 / 29.6 ms, but they
 branched on the gate range and the suite never drew gates where training lives. A training run hit the
 untested branch; widening the suite exposed wrong gradients there; Wonder then diagnosed that its chunk
 transform inverts the erase product, which is unstable for gamma > 0.5, and routed those inputs to its
-recurrent kernels. The verified result is correct everywhere but is not chunk-fast at typical gates; the
+recurrent kernels. The repaired result passed the applicable empirical suite but is not chunk-fast at typical gates; the
 unverified fast-path run is kept in `runs_public/wonder_vse1_unverified_fastpath`.
 
 **What the checker caught along the way** (all fixed by the model from the counterexample alone): shared
@@ -63,7 +92,13 @@ memory overflow on the first write of every layer; silently wrong values at head
 optimized kernel that was wrong only when the state decays almost fully each step; a backward with a wrong
 `dq` on every input.
 
-## A layer no kernel library runs: Triadic Gated DeltaNet
+## Generating Triadic Gated DeltaNet kernels for an L4
+
+The [Triadic Linear Attention paper](https://arxiv.org/abs/2609.36529) and its
+[official implementation](https://github.com/OliverSieberling/TriadicLinearAttention) already provide custom
+forward/backward kernels targeting H100/sm90. This project does not invent Triadic GDN or establish that no
+implementation exists. It demonstrates model-generated Triton kernels for the local reference on an L4;
+equivalence to every feature of the authors' implementation has not been established.
 
 Triadic Gated DeltaNet (arXiv 2609.36529, September 2026) applies the delta rule to the joint key
 k_t ⊗ k'_t, so the state is 512 x 128 per head (`kernel_contract/layers/triadic_gdn.py`). FLA's per-channel
@@ -89,16 +124,25 @@ All three pass the full suite, gradients included. The released kernels are
 | Muse Wonder kernel | 164 ms | 1.2 GB | 1.744 |
 
 The kernel trains 15x faster than the checkpointed loop with an eighth of the memory, and both reach
-the same validation loss. At a size where the
+close validation losses in this single-seed, single-validation-batch experiment. At a size where the
 plain loop fits (batch 2 x 256), the two match from the same init and batches: every parameter gradient
 agrees within 1.3% on step one (median 0.6%), validation loss is 2.536 vs 2.535 at step 25 and 2.136 vs 2.158
 at step 150, and the kernel step takes 28.8 ms against 690 ms. Logs are in `runs_public/train_triadic/`.
 
+### Turnaround, not just step speed
+
+The recorded Triadic Wonder run spans 28.7 minutes from its first to last event. At the measured median
+training-step times, 300 steps save about 11.5 minutes; charging the whole generation run upfront gives
+an approximate break-even of 750 steps, before other overhead. Model-token cost excludes GPU rental.
+The workbench reports generation/checking time, cached training, time to a configured validation target,
+and GPU cost estimates separately. No end-to-end speedup is inferred solely from kernel timing.
+
 ## Benchmark: 12 recurrent layers, three Meta models
 
 Twelve layers (`kernel_contract/layers/b01_gdr.py` ... `b12_two_sided.py`), each checked against its matrix
-form. Five have no existing kernel. Each cell shows verified forward ms / verified fwd+bwd ms (speedup over
-the eager loop) and the run's model cost; ✗ means nothing passed the full suite within the run's budget
+form. A successful run means the observed workload passed without blocking errors; some size probes were
+explicitly unsupported and some reference-invalid cases were skipped. It does not mean every case passed. Five have no applicable expert route in this benchmark implementation; this is not an exhaustive absence claim. Each cell shows verified forward ms / verified fwd+bwd ms (speedup over
+the eager loop) and the run's model cost; ✗ means no candidate met the acceptance policy within the run's budget
 ($6 Wonder, $1 Contributor, $4 Spark Open). The expert route is the fastest FLA kernel computing the same
 equation.
 
@@ -124,14 +168,15 @@ equation.
 | Muse Spark Open | 11/12 | 7/12 | $7.73 ($0.64 per layer) |
 
 **Escalation.** b08 and b09 were run once more with escalation (`--handoff`): Wonder continues Contributor's
-run from its verified forward, and its first backward passes the full suite on both layers.
+run from its verified forward, and its first backward passes all 41 recorded cases on both layers.
 
 | Layer | Contributor, then Wonder | Model cost |
 |---|---|---|
 | b08 read before write | 4.9 / 49 ms (85×) | $0.04 + $1.63 |
 | b09 decay after write | 3.3 / 50 ms (85×) | $0.04 + $0.71 |
 
-Counting these runs, every one of the 12 layers has a verified forward and backward. The expert kernels are still
+Across the models and these additional runs, all 12 layers have an accepted forward/backward implementation
+for the observed workload. This is portfolio coverage, not a 12/12 success rate for one fixed strategy. The expert kernels are still
 2 to 3 times faster on the two most-tuned layers (b01, b02). The `@muse_kernel.fast` decorator escalates the
 same way by default: Contributor first, Wonder only if Contributor fails. Transcripts are in
 `runs_public/handoff/`.
@@ -151,9 +196,13 @@ def my_layer(q, k, v, g, beta, scale):
 Train as usual. After two calls the decorator has seen the real shapes, dtypes and value ranges, writes them
 into a contract, and starts a background build (Spark 1.3 Contributor plus the checker above, escalating to Wonder if it fails). Once a forward+backward
 kernel passes, calls with a verified shape, dtype and value range go to the kernel; anything else still runs
-your function. Builds are cached next to the source by its hash, so editing the equation triggers a new
-build and a committed cache is reused. On `examples/muse_kernel/smoke.py` (a gated delta rule) the training
+your function. Caches bind captured source and dependencies, device/layout signatures, software and hardware identity,
+and the selected kernel hash. A changed environment requires revalidation; recreate the decorator after source edits. On `examples/muse_kernel/smoke.py` (a gated delta rule) the training
 step went from 456 ms to 8.7 ms once the kernel landed (29/29 cases, $0.03 with Spark 1.3 Contributor).
+
+Forward invocation failures fall back to the reference. For backward failures, use `muse_kernel.train_step`
+to retry the whole loss/backward computation before the optimizer updates parameters. The loss closure must
+not mutate parameters or step the optimizer; fatal CUDA context failures still require restarting the worker.
 
 With Muse Code, the project skill in `.agents/skills/fast-recurrence/` lets you ask in plain English ("this
 recurrence is too slow to train, make it fast and trainable"); Muse Code adds the decorator and leaves the
@@ -177,7 +226,7 @@ python -m kernel_contract.train_demo --layer wek --mixer kernel_contract/recur_c
 ```
 
 Full transcripts of every run (prompts, responses, checker verdicts, costs) are in `runs_public/`. Spend is
-capped per run and overall; every call reserves its worst case first (`utils/providers/meta_provider.py`).
+capped per run and overall; calls use atomic conservative reservations, including pending calls (`utils/providers/meta_provider.py`).
 
 ---
 

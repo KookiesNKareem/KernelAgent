@@ -1,0 +1,347 @@
+{
+  "environment": {
+    "driver": [
+      "595.91.07"
+    ],
+    "cache_version": 2,
+    "python": "3.12.3",
+    "torch": "2.8.0+cu128",
+    "triton": "3.4.0",
+    "cuda": "12.8",
+    "platform": "Linux",
+    "gpu": [
+      {
+        "name": "NVIDIA L4",
+        "capability": [
+          8,
+          9
+        ],
+        "memory": 23661248512
+      }
+    ]
+  },
+  "result": {
+    "outcome": "accept",
+    "results": [
+      {
+        "name": "observed",
+        "axis": "seed",
+        "outcome": "accept",
+        "err": 3.783855284655857e-08,
+        "torch_err": 4.7420583293433793e-08,
+        "scale": 0.36517733518725193
+      },
+      {
+        "name": "seed1",
+        "axis": "seed",
+        "outcome": "accept",
+        "err": 3.149725380513502e-08,
+        "torch_err": 3.8675547778255215e-08,
+        "scale": 0.26546869817680424
+      },
+      {
+        "name": "seed2",
+        "axis": "seed",
+        "outcome": "accept",
+        "err": 3.189326300279127e-08,
+        "torch_err": 4.007888737556087e-08,
+        "scale": 0.29146550992469494
+      },
+      {
+        "name": "scale_up",
+        "axis": "values",
+        "outcome": "accept",
+        "err": 0.026164085255004466,
+        "torch_err": 0.03365315237897448,
+        "scale": 365975.4558165368
+      },
+      {
+        "name": "scale_down",
+        "axis": "values",
+        "outcome": "accept",
+        "err": 3.505327638176221e-14,
+        "torch_err": 6.258430546889814e-14,
+        "scale": 3.6576695541719215e-07
+      },
+      {
+        "name": "shift",
+        "axis": "values",
+        "outcome": "accept",
+        "err": 0.0009405087903360254,
+        "torch_err": 0.0009931944969139295,
+        "scale": 5705.531510796009
+      },
+      {
+        "name": "negative",
+        "axis": "values",
+        "outcome": "accept",
+        "err": 1.9716607035924483e-07,
+        "torch_err": 2.0056440841464962e-07,
+        "scale": 1.8719171978400255
+      },
+      {
+        "name": "half_zero",
+        "axis": "values",
+        "outcome": "accept",
+        "err": 1.7293534770868035e-08,
+        "torch_err": 2.0345933687826445e-08,
+        "scale": 0.18910310533311692
+      },
+      {
+        "name": "constant",
+        "axis": "values",
+        "outcome": "accept",
+        "err": 1.59375807273765e-08,
+        "torch_err": 1.5644865430930466e-08,
+        "scale": 0.1414202358819998
+      },
+      {
+        "name": "scale_mid",
+        "axis": "values",
+        "outcome": "accept",
+        "err": 5.868659849284086e-05,
+        "torch_err": 5.9343584325688425e-05,
+        "scale": 501.1875103489981
+      },
+      {
+        "name": "shift_neg",
+        "axis": "values",
+        "outcome": "accept",
+        "err": 0.0006659082409896655,
+        "torch_err": 0.0009180220085909241,
+        "scale": 5693.465948313064
+      },
+      {
+        "name": "s0=33",
+        "axis": "sizes",
+        "outcome": "accept",
+        "err": 4.1398896422073506e-08,
+        "torch_err": 3.708528772961017e-08,
+        "scale": 0.291090221135048
+      },
+      {
+        "name": "s0=65",
+        "axis": "sizes",
+        "outcome": "accept",
+        "err": 3.1400658462299447e-08,
+        "torch_err": 3.4923632832861706e-08,
+        "scale": 0.35629587989143596
+      },
+      {
+        "name": "s1=9",
+        "axis": "sizes",
+        "outcome": "accept",
+        "err": 2.6408793263321684e-08,
+        "torch_err": 3.802572656752545e-08,
+        "scale": 0.3448621846457822
+      },
+      {
+        "name": "s1=17",
+        "axis": "sizes",
+        "outcome": "accept",
+        "err": 3.60926475928558e-08,
+        "torch_err": 3.786193975008345e-08,
+        "scale": 0.3747180992113166
+      },
+      {
+        "name": "decay_none",
+        "axis": "values",
+        "outcome": "accept",
+        "err": 9.424137470404048e-08,
+        "torch_err": 1.1720935583214853e-07,
+        "scale": 0.617121599578698
+      },
+      {
+        "name": "decay_strong",
+        "axis": "values",
+        "outcome": "accept",
+        "err": 3.7153168652714896e-08,
+        "torch_err": 3.7153168652714896e-08,
+        "scale": 0.30590554336746123
+      },
+      {
+        "name": "gate_edges",
+        "axis": "values",
+        "outcome": "accept",
+        "err": 4.1134033401668546e-08,
+        "torch_err": 4.0951850133197354e-08,
+        "scale": 0.3846559767779927
+      },
+      {
+        "name": "gate_typical",
+        "axis": "values",
+        "outcome": "accept",
+        "err": 8.277194898931306e-08,
+        "torch_err": 5.6664251082971795e-08,
+        "scale": 0.4304992873216106
+      },
+      {
+        "name": "gate_high",
+        "axis": "values",
+        "outcome": "accept",
+        "err": 3.621950850352107e-08,
+        "torch_err": 4.782261020519485e-08,
+        "scale": 0.38585367758262235
+      },
+      {
+        "name": "gate_mid",
+        "axis": "values",
+        "outcome": "accept",
+        "err": 3.1575048131671224e-08,
+        "torch_err": 3.766877348931885e-08,
+        "scale": 0.3470849298597048
+      },
+      {
+        "name": "contiguous",
+        "axis": "layout",
+        "outcome": "accept",
+        "err": 3.783855284655857e-08,
+        "torch_err": 4.7420583293433793e-08,
+        "scale": 0.36517733518725193
+      },
+      {
+        "name": "strided2",
+        "axis": "layout",
+        "outcome": "accept",
+        "err": 3.783855284655857e-08,
+        "torch_err": 4.7420583293433793e-08,
+        "scale": 0.36517733518725193
+      },
+      {
+        "name": "strided3_off1",
+        "axis": "layout",
+        "outcome": "accept",
+        "err": 3.783855284655857e-08,
+        "torch_err": 4.7420583293433793e-08,
+        "scale": 0.36517733518725193
+      },
+      {
+        "name": "transposed",
+        "axis": "layout",
+        "outcome": "accept",
+        "err": 3.783855284655857e-08,
+        "torch_err": 4.7420583293433793e-08,
+        "scale": 0.36517733518725193
+      },
+      {
+        "name": "leading_swap",
+        "axis": "layout",
+        "outcome": "accept",
+        "err": 3.783855284655857e-08,
+        "torch_err": 4.7420583293433793e-08,
+        "scale": 0.36517733518725193
+      },
+      {
+        "name": "compound",
+        "axis": "values",
+        "outcome": "accept",
+        "err": 2.6594597846846257e-08,
+        "torch_err": 2.35608477172633e-08,
+        "scale": 0.3937314839293313
+      }
+    ],
+    "ms": 0.517039792612195,
+    "reference_ms": 52.32255789451301
+  },
+  "holdout_result": {
+    "outcome": "accept",
+    "results": [
+      {
+        "name": "holdout_0",
+        "axis": "holdout",
+        "outcome": "accept",
+        "err": 7.199215401598735e-08,
+        "torch_err": 8.926178893253756e-08,
+        "scale": 0.41887321547230116
+      },
+      {
+        "name": "holdout_1",
+        "axis": "holdout",
+        "outcome": "accept",
+        "err": 3.521284186458473e-08,
+        "torch_err": 3.372631651732405e-08,
+        "scale": 0.3090547323922562
+      },
+      {
+        "name": "holdout_2",
+        "axis": "holdout",
+        "outcome": "accept",
+        "err": 4.1740706280268824e-08,
+        "torch_err": 5.56715126220908e-08,
+        "scale": 0.4042087195811891
+      },
+      {
+        "name": "holdout_3",
+        "axis": "holdout",
+        "outcome": "accept",
+        "err": 2.9950522395516543e-08,
+        "torch_err": 2.9286198438560618e-08,
+        "scale": 0.3235035016100883
+      },
+      {
+        "name": "holdout_4",
+        "axis": "holdout",
+        "outcome": "accept",
+        "err": 1.0021144525307335e-07,
+        "torch_err": 1.0089035151761294e-07,
+        "scale": 0.7200846783421
+      },
+      {
+        "name": "holdout_5",
+        "axis": "holdout",
+        "outcome": "accept",
+        "err": 4.1423863450518184e-08,
+        "torch_err": 3.627429251418235e-08,
+        "scale": 0.34379932383713063
+      },
+      {
+        "name": "holdout_6",
+        "axis": "holdout",
+        "outcome": "accept",
+        "err": 8.209211976861752e-08,
+        "torch_err": 5.680594569734687e-08,
+        "scale": 0.3774346359859358
+      },
+      {
+        "name": "holdout_7",
+        "axis": "holdout",
+        "outcome": "accept",
+        "err": 2.8833057608146362e-08,
+        "torch_err": 3.362086192781888e-08,
+        "scale": 0.3289982583348019
+      },
+      {
+        "name": "holdout_8",
+        "axis": "holdout",
+        "outcome": "accept",
+        "err": 6.095498550351408e-08,
+        "torch_err": 4.130552666570253e-08,
+        "scale": 0.4302585327433298
+      },
+      {
+        "name": "holdout_9",
+        "axis": "holdout",
+        "outcome": "accept",
+        "err": 2.9576536247910568e-08,
+        "torch_err": 3.0554916000125054e-08,
+        "scale": 0.23069306359136754
+      },
+      {
+        "name": "holdout_10",
+        "axis": "holdout",
+        "outcome": "accept",
+        "err": 9.461248165476555e-08,
+        "torch_err": 9.012679877407059e-08,
+        "scale": 0.6654254059364425
+      },
+      {
+        "name": "holdout_11",
+        "axis": "holdout",
+        "outcome": "accept",
+        "err": 4.739706815914957e-08,
+        "torch_err": 4.3318310383178016e-08,
+        "scale": 0.3376167546465962
+      }
+    ]
+  }
+}

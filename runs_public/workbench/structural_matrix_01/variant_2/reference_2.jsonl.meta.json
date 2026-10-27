@@ -1,0 +1,43 @@
+{
+  "config": {
+    "layer": "muse_jobs.j_8e8635463a38ec88e3c25816",
+    "mixer": "checkpointed",
+    "steps": 100,
+    "batch": 2,
+    "seq": 64,
+    "eval_every": 25,
+    "grad_check": null,
+    "out": "/workspace/recurrence/muse_jobs/8e8635463a38ec88e3c25816/reference_2.jsonl",
+    "seed": 2,
+    "val_batches": 8,
+    "width": 64,
+    "layers": 1,
+    "heads": 2,
+    "head_dim": 16,
+    "device": "cuda",
+    "data": null,
+    "expected_data_sha256": null
+  },
+  "environment": {
+    "cache_version": 2,
+    "python": "3.12.3",
+    "torch": "2.8.0+cu128",
+    "triton": "3.4.0",
+    "cuda": "12.8",
+    "platform": "Linux",
+    "gpu": [
+      {
+        "name": "NVIDIA L4",
+        "capability": [
+          8,
+          9
+        ],
+        "memory": 23661248512
+      }
+    ]
+  },
+  "dataset_sha256": "86c4e6aa9db7c042ec79f339dcb96d42b0075e16b8fc2e86bf0ca57e2dc565ed",
+  "dataset_url": "https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt",
+  "validation": "mean over fixed disjoint-split batches",
+  "started": 1793133306.276659
+}

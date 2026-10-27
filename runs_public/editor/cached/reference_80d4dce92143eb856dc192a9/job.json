@@ -1,0 +1,175 @@
+{
+ "hash": "80d4dce92143eb856dc192a9",
+ "name": "reference",
+ "source": "from __future__ import annotations\nimport torch as torch\n\ndef reference(q, k, v, e, g, beta, gamma, scale):\n    \"\"\"Erase memory, then write the prediction error. Try reversing these two updates.\"\"\"\n    B, H, T, K = q.shape\n    tensors = (q, k, v, e, g, beta, gamma)\n    q, k, v, e, g, beta, gamma = (x.to(torch.promote_types(x.dtype, torch.float32)) for x in tensors)\n    state = q.new_zeros(B, H, K, v.shape[-1])\n    outputs = []\n    for t in range(T):\n        key, value, erase = (k[:, :, t], v[:, :, t], e[:, :, t])\n        state = state * g[:, :, t].exp()[..., None]\n        state = state - gamma[:, :, t, None, None] * erase[..., None] * (state * erase[..., None]).sum(-2)[..., None, :]\n        prediction = (state * key[..., None]).sum(-2)\n        state = state + key[..., None] * (beta[:, :, t, None] * (value - prediction))[..., None, :]\n        outputs.append((state * (q[:, :, t] * scale)[..., None]).sum(-2))\n    return torch.stack(outputs, dim=2)\n",
+ "signature": "q, k, v, e, g, beta, gamma, scale",
+ "call": "muse_jobs.j_80d4dce92143eb856dc192a9.reference(Tensor(shape=[2, 2, 64, 16], dtype=bfloat16, non-contiguous, strides [10496, 16, 164, 1]), Tensor(shape=[2, 2, 64, 16], dtype=bfloat16, non-contiguous, strides [2048, 16, 32, 1]), Tensor(shape=[2, 2, 64, 16], dtype=bfloat16, non-contiguous, strides [10496, 16, 164, 1]), Tensor(shape=[2, 2, 64, 16], dtype=bfloat16, non-contiguous, strides [2048, 16, 32, 1]), Tensor(shape=[2, 2, 64, 16], dtype=float32, non-contiguous, strides [2048, 16, 32, 1]), Tensor(shape=[2, 2, 64], dtype=float32, non-contiguous, strides [128, 1, 2]), Tensor(shape=[2, 2, 64], dtype=float32, non-contiguous, strides [128, 1, 2]), 0.25)",
+ "sizes": {
+  "s0": 64,
+  "s1": 16
+ },
+ "grad_names": "q, k, v, e, g, beta, gamma",
+ "domains": [
+  "k has unit-norm rows (L2 over the last dimension)",
+  "e has unit-norm rows (L2 over the last dimension)",
+  "g is <= 0 (a log decay)",
+  "beta lies in [0, 1]",
+  "gamma lies in [0, 1]"
+ ],
+ "verified_signatures": [
+  [
+   {
+    "shape": [
+     2,
+     2,
+     64,
+     16
+    ],
+    "dtype": "torch.bfloat16",
+    "device": "cuda:0",
+    "stride": [
+     10496,
+     16,
+     164,
+     1
+    ],
+    "offset": 0,
+    "requires_grad": true
+   },
+   {
+    "shape": [
+     2,
+     2,
+     64,
+     16
+    ],
+    "dtype": "torch.bfloat16",
+    "device": "cuda:0",
+    "stride": [
+     2048,
+     16,
+     32,
+     1
+    ],
+    "offset": 0,
+    "requires_grad": true
+   },
+   {
+    "shape": [
+     2,
+     2,
+     64,
+     16
+    ],
+    "dtype": "torch.bfloat16",
+    "device": "cuda:0",
+    "stride": [
+     10496,
+     16,
+     164,
+     1
+    ],
+    "offset": 64,
+    "requires_grad": true
+   },
+   {
+    "shape": [
+     2,
+     2,
+     64,
+     16
+    ],
+    "dtype": "torch.bfloat16",
+    "device": "cuda:0",
+    "stride": [
+     2048,
+     16,
+     32,
+     1
+    ],
+    "offset": 0,
+    "requires_grad": true
+   },
+   {
+    "shape": [
+     2,
+     2,
+     64,
+     16
+    ],
+    "dtype": "torch.float32",
+    "device": "cuda:0",
+    "stride": [
+     2048,
+     16,
+     32,
+     1
+    ],
+    "offset": 0,
+    "requires_grad": true
+   },
+   {
+    "shape": [
+     2,
+     2,
+     64
+    ],
+    "dtype": "torch.float32",
+    "device": "cuda:0",
+    "stride": [
+     128,
+     1,
+     2
+    ],
+    "offset": 0,
+    "requires_grad": true
+   },
+   {
+    "shape": [
+     2,
+     2,
+     64
+    ],
+    "dtype": "torch.float32",
+    "device": "cuda:0",
+    "stride": [
+     128,
+     1,
+     2
+    ],
+    "offset": 0,
+    "requires_grad": true
+   },
+   {
+    "scalar": 0.25
+   }
+  ]
+ ],
+ "environment": {
+  "driver": [
+   "595.91.07"
+  ],
+  "cache_version": 2,
+  "python": "3.12.3",
+  "torch": "2.8.0+cu128",
+  "triton": "3.4.0",
+  "cuda": "12.8",
+  "platform": "Linux",
+  "gpu": [
+   {
+    "name": "NVIDIA L4",
+    "capability": [
+     8,
+     9
+    ],
+    "memory": 23661248512
+   }
+  ]
+ },
+ "cache_version": 2,
+ "models": [
+  "muse-spark-1.3-contributor"
+ ],
+ "max_usd": 1.0,
+ "require_holdout": true
+}

@@ -1,0 +1,12 @@
+{
+  "reference": {
+    "original_val_loss": 5.185872872670491,
+    "replayed_val_loss": 5.185872872670491,
+    "steps": 12
+  },
+  "kernel": {
+    "original_val_loss": 5.185853004455566,
+    "replayed_val_loss": 5.185853004455566,
+    "steps": 12
+  }
+}

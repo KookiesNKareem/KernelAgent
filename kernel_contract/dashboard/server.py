@@ -73,8 +73,12 @@ def make_handler(events: Path, replay: float | None, pre: list[str] = (), model:
             self.wfile.flush()
 
         def _stream(self):
+            self._send(json.dumps({"event": "run_metadata", "mode": "recorded" if replay else "live",
+                                   "replay_speed": replay}))
+            deferred = [x for x in pre if json.loads(x).get("event") == "train_done"]
             for x in pre:
-                self._send(x)
+                if x not in deferred:
+                    self._send(x)
             if replay:
                 lines = [x for x in events.read_text().splitlines() if x.strip()]
                 prev = None
@@ -83,6 +87,8 @@ def make_handler(events: Path, replay: float | None, pre: list[str] = (), model:
                     if prev is not None and t is not None:
                         time.sleep(min(max(t - prev, 0) / replay, 3.0))
                     prev = t
+                    self._send(x)
+                for x in deferred:
                     self._send(x)
                 while True:  # keep the stream open so the browser does not reconnect and replay again
                     time.sleep(15)

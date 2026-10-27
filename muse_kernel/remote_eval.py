@@ -35,19 +35,19 @@ def step(fn, args, kwargs, grads: bool):
     return run
 
 
-def main(job: str, path: str, grads: bool):
+def main(job: str, path: str, grads: bool, holdout: str | None = None):
     job = Path(job)
     spec = OpSpec.from_json(json.loads((job / "spec.json").read_text()))
     spec.flags["check_grads"] = grads
-    cases = build_cases(spec)
+    cases = json.loads(Path(holdout).read_text())["cases"] if holdout else build_cases(spec)
     domains = {a["tensor"].get("domain") for a in spec.args if isinstance(a, dict) and "tensor" in a}
-    if "logdecay" in domains:
+    if not holdout and "logdecay" in domains:
         cases.append({"name": "compound", "axis": "values", "seed": 3, "layout": "transposed", "stress": "decay_strong"})
     results = list(run_contract(spec, Path(path), timeout=900, cases=cases).results)
     for i, extra in enumerate(json.loads((job / "extra_specs.json").read_text()) if (job / "extra_specs.json").exists() else []):
         es = OpSpec.from_json(extra)
         es.flags["check_grads"] = grads
-        seeds = [c for c in build_cases(es) if c["name"] in ("observed", "seed1")]
+        seeds = cases if holdout else [c for c in build_cases(es) if c["name"] in ("observed", "seed1", "gate_typical")]
         for r in run_contract(es, Path(path), timeout=900, cases=seeds).results:
             results.append({**r, "name": f"call{i + 2}/{r['name']}", "axis": "workload"})
     worst = max(results, key=lambda r: {"wrong": 3, "crash": 2, "refuse": 1}.get(r["outcome"], 0))["outcome"]
@@ -79,4 +79,5 @@ if __name__ == "__main__":
     if sys.argv[1] == "--reference":
         time_reference(sys.argv[2])
     else:
-        main(sys.argv[1], sys.argv[2], grads="--grads" in sys.argv)
+        main(sys.argv[1], sys.argv[2], grads="--grads" in sys.argv,
+             holdout=sys.argv[sys.argv.index("--holdout")+1] if "--holdout" in sys.argv else None)

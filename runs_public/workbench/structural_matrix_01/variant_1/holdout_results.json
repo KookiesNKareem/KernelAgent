@@ -1,0 +1,113 @@
+{
+  "outcome": "accept",
+  "results": [
+    {
+      "name": "holdout_0",
+      "axis": "holdout",
+      "outcome": "accept",
+      "err": 8.228366514539953e-08,
+      "torch_err": 6.636793600800495e-08,
+      "scale": 0.4151508814678693
+    },
+    {
+      "name": "holdout_1",
+      "axis": "holdout",
+      "outcome": "accept",
+      "err": 3.426161321318233e-08,
+      "torch_err": 3.553518133914135e-08,
+      "scale": 0.3279949084034869
+    },
+    {
+      "name": "holdout_2",
+      "axis": "holdout",
+      "outcome": "accept",
+      "err": 3.943712434395508e-08,
+      "torch_err": 5.683487325214287e-08,
+      "scale": 0.5135476364928435
+    },
+    {
+      "name": "holdout_3",
+      "axis": "holdout",
+      "outcome": "accept",
+      "err": 2.5653976637451947e-08,
+      "torch_err": 2.654068290142142e-08,
+      "scale": 0.23682312960236684
+    },
+    {
+      "name": "holdout_4",
+      "axis": "holdout",
+      "outcome": "accept",
+      "err": 9.58947811713351e-08,
+      "torch_err": 1.2181059613758372e-07,
+      "scale": 0.7440250379935827
+    },
+    {
+      "name": "holdout_5",
+      "axis": "holdout",
+      "outcome": "accept",
+      "err": 3.6200283215492846e-08,
+      "torch_err": 5.851437748227717e-08,
+      "scale": 0.404570618605365
+    },
+    {
+      "name": "holdout_6",
+      "axis": "holdout",
+      "outcome": "accept",
+      "err": 7.237301147267061e-08,
+      "torch_err": 8.016471134131287e-08,
+      "scale": 0.37294409833941367
+    },
+    {
+      "name": "holdout_7",
+      "axis": "holdout",
+      "outcome": "accept",
+      "err": 3.6865552166531756e-08,
+      "torch_err": 3.252582098101087e-08,
+      "scale": 0.33377220985268996
+    },
+    {
+      "name": "holdout_8",
+      "axis": "holdout",
+      "outcome": "accept",
+      "err": 3.5614887344825874e-08,
+      "torch_err": 5.169693850781698e-08,
+      "scale": 0.37006563805562753
+    },
+    {
+      "name": "holdout_9",
+      "axis": "holdout",
+      "outcome": "accept",
+      "err": 3.5024940281402905e-08,
+      "torch_err": 2.786136815702278e-08,
+      "scale": 0.2965127771050502
+    },
+    {
+      "name": "holdout_10",
+      "axis": "holdout",
+      "outcome": "accept",
+      "err": 9.738025863459399e-08,
+      "torch_err": 1.2627829182321193e-07,
+      "scale": 0.6667582020597541
+    },
+    {
+      "name": "holdout_11",
+      "axis": "holdout",
+      "outcome": "accept",
+      "err": 3.808855270071021e-08,
+      "torch_err": 3.808855270071021e-08,
+      "scale": 0.37241807941034843
+    }
+  ],
+  "coverage": {
+    "total": 12,
+    "accept": 12,
+    "wrong": 0,
+    "crash": 0,
+    "refuse": 0,
+    "skip": 0,
+    "unsupported": [],
+    "skipped": [],
+    "all_cases_passed": true
+  },
+  "candidate_sha256": "06831963549d01ddcb2ff8c59953c132cb5d2b212f3f74ebe9308b885e5d8ff2"
+}

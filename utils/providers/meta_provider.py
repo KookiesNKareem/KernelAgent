@@ -1,6 +1,5 @@
 """Meta's models: Muse Spark over the Meta Model API, Muse Spark Open over Baseten."""
 
-import fcntl
 import json
 import os
 from pathlib import Path
@@ -9,6 +8,7 @@ from typing import Any
 from dotenv import load_dotenv
 
 from .base import LLMResponse
+from .budget import BudgetExceeded, reserve, settle
 from .openai_base import OpenAICompatibleProvider
 
 load_dotenv()
@@ -27,10 +27,6 @@ LEDGER = Path(os.environ.get("META_SPEND_LEDGER", Path.home() / ".kernelagent_me
 BASETEN_LEDGER = Path.home() / ".kernelagent_baseten_spend.json"
 
 
-class BudgetExceeded(RuntimeError):
-    pass
-
-
 def spent(ledger: Path = LEDGER) -> float:
     try:
         return json.loads(ledger.read_text())["usd"]
@@ -38,22 +34,6 @@ def spent(ledger: Path = LEDGER) -> float:
         return 0.0
 
 
-def _record(model_name: str, usage: dict | None, ledger: Path = LEDGER) -> float:
-    price_in, price_cached, price_out = next(p for k, p in META_PRICES.items() if model_name.startswith(k))
-    usage = usage or {}
-    cached = (usage.get("prompt_tokens_details") or {}).get("cached_tokens") or 0
-    cost = ((usage.get("prompt_tokens", 0) - cached) * price_in + cached * price_cached
-            + usage.get("completion_tokens", 0) * price_out) / 1e6
-    # parallel benchmark workers share the ledger, so the read-modify-write holds an exclusive lock
-    with open(ledger.with_suffix(".lock"), "w") as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX)
-        try:
-            data = json.loads(ledger.read_text())
-        except (FileNotFoundError, ValueError):
-            data = {"usd": 0.0}
-        data["usd"] = data.get("usd", 0.0) + cost
-        ledger.write_text(json.dumps(data))
-    return cost
 
 
 class _MuseProvider(OpenAICompatibleProvider):
@@ -63,15 +43,30 @@ class _MuseProvider(OpenAICompatibleProvider):
     ledger: Path = LEDGER
     budget: float = 120.0
 
+    def _initialize_client(self):
+        super()._initialize_client()
+        if self.client is not None:
+            self.client = self.client.with_options(max_retries=0)
+
     def get_response(self, model_name: str, messages: list[dict[str, str]], **kwargs) -> LLMResponse:
-        # reserve the worst case (prompt at ~3 chars/token, full max_tokens) so no call can cross the cap
+        # One UTF-8 byte per token plus framing is a conservative reservation, not a tokenizer estimate.
         price_in, _, price_out = next(p for k, p in META_PRICES.items() if model_name.startswith(k))
-        prompt_chars = sum(len(m.get("content") or "") for m in messages)
-        worst = (prompt_chars / 3 * price_in + kwargs.get("max_tokens", 16000) * price_out) / 1e6
-        if spent(self.ledger) + worst > self.budget:
-            raise BudgetExceeded(f"{self.ledger.name}: spend ${spent(self.ledger):.2f} + worst case ${worst:.2f} exceeds budget ${self.budget:.2f}")
+        prompt_bound = sum(len((m.get("content") or "").encode()) + 128 for m in messages)
+        worst = (prompt_bound * price_in + min(kwargs.get("max_tokens", 16000),
+                                             self.get_max_tokens_limit(model_name)) * price_out) / 1e6
+        remaining = kwargs.pop("call_budget_usd", self.budget)
+        if worst > remaining:
+            raise BudgetExceeded(f"Next call reservation ${worst:.2f} exceeds run remainder ${remaining:.2f}")
+        token = reserve(self.ledger, worst, self.budget)
+        # Leave the reservation in place on ambiguous API failure: a timed-out request may have billed.
         resp = super().get_response(model_name, messages, **kwargs)
-        _record(model_name, resp.usage, self.ledger)
+        usage = resp.usage
+        actual = None
+        if usage and "prompt_tokens" in usage and "completion_tokens" in usage:
+            pi, pc, po = next(p for k, p in META_PRICES.items() if model_name.startswith(k))
+            cached = (usage.get("prompt_tokens_details") or {}).get("cached_tokens") or 0
+            actual = ((usage["prompt_tokens"] - cached) * pi + cached * pc + usage["completion_tokens"] * po) / 1e6
+        settle(self.ledger, token, actual)
         return resp
 
     def _build_api_params(
@@ -114,7 +109,8 @@ class MetaProvider(_MuseProvider):
 
     def __init__(self):
         super().__init__(api_key_env="MODEL_API_KEY", base_url="https://api.meta.ai/v1")
-        self.budget = float(os.environ.get("META_BUDGET_USD", 120))
+        self.ledger = Path(os.environ.get("MUSE_EXPERIMENT_LEDGER", str(LEDGER)))
+        self.budget = float(os.environ.get("MUSE_EXPERIMENT_BUDGET_USD", os.environ.get("META_BUDGET_USD", 120)))
 
     @property
     def name(self) -> str:
@@ -126,7 +122,8 @@ class BasetenProvider(_MuseProvider):
 
     def __init__(self):
         super().__init__(api_key_env="BASETEN_API_KEY", base_url="https://inference.baseten.co/v1")
-        self.budget = float(os.environ.get("BASETEN_BUDGET_USD", 40))
+        self.ledger = Path(os.environ.get("MUSE_EXPERIMENT_LEDGER", str(BASETEN_LEDGER)))
+        self.budget = float(os.environ.get("MUSE_EXPERIMENT_BUDGET_USD", os.environ.get("BASETEN_BUDGET_USD", 40)))
 
     @property
     def name(self) -> str:

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -21,6 +22,7 @@ from utils.providers import get_model_provider
 from utils.providers.meta_provider import META_PRICES, spent
 
 from .agent import CASE_TEXT, extract_code
+from .evidence import coverage, eligible, sha256
 
 OBSERVED = "B=2, H=4, T=512, K=V=128"
 SYMBOLS = {"s0": "H", "s1": "T", "s2": "K=V"}
@@ -174,8 +176,8 @@ The model calls it like this (shapes, dtypes and strides as observed):
 
 Observed on every call:{facts}
 
-It takes {J["eager_ms"]:.0f} ms forward on this call on an NVIDIA L4. Write a fast Triton implementation for the L4
-(Ada, sm_89, Triton 3.5).
+It takes {J["eager_ms"]:.0f} ms forward on this call. Target environment: {J.get("target_environment", "NVIDIA L4 (Ada, sm_89)")}.
+Write a fast Triton implementation for that environment.
 
 Requirements:
 - Define `def kernel_function({J["signature"]}):` with the same arguments and semantics, returning the same result.
@@ -283,7 +285,7 @@ class Run:
         self.log(event="llm_start", tag=tag, prompt=text)
         t0 = time.time()
         resp = self.provider.get_response(self.a.model, self.messages, max_tokens=self.a.max_tokens,
-                                          reasoning_effort=self.a.effort)
+                                          reasoning_effort=self.a.effort, call_budget_usd=self.a.max_usd - self.cost)
         content = resp.content or ""  # an answer spent entirely on reasoning counts as returning no code
         self.messages.append({"role": "assistant", "content": content})
         call_usd = usage_cost(self.a.model, resp.usage)
@@ -303,14 +305,17 @@ class Run:
     def evaluate(self, path: Path, grads: bool) -> dict:
         dest = f"{self.a.remote_dir}/runs_remote/{self.out.name}/{path.name}"
         pre = shlex.split(self.a.remote)
-        subprocess.run(pre + [f"mkdir -p $(dirname {dest}) && cat > {dest}"], input=path.read_bytes(), check=True)
+        subprocess.run(pre + [f"mkdir -p {shlex.quote(str(Path(dest).parent))} && cat > {shlex.quote(dest)}"], input=path.read_bytes(), check=True)
         if self.a.job:
-            cmd = (f"cd {self.a.remote_dir} && python -m muse_kernel.remote_eval {self.a.remote_job} {dest}"
+            cmd = (f"cd {shlex.quote(self.a.remote_dir)} && python -m muse_kernel.remote_eval {shlex.quote(self.a.remote_job)} {shlex.quote(dest)}"
                    + (" --grads" if grads else ""))
         else:
-            cmd = (f"cd {self.a.remote_dir} && python -m kernel_contract.recur_eval {dest} --layer {self.a.layer}"
+            cmd = (f"cd {shlex.quote(self.a.remote_dir)} && python -m kernel_contract.recur_eval {shlex.quote(dest)} --layer {shlex.quote(self.a.layer)}"
                    + (" --grads" if grads else ""))
-        p = subprocess.run(pre + [cmd], capture_output=True, text=True)
+        limit = int(os.environ.get("MUSE_KERNEL_REMOTE_TIMEOUT", 7200))
+        if os.environ.get("MUSE_KERNEL_REMOTE_TIMEOUT"):
+            cmd = f"timeout --kill-after=10s {limit}s bash -c {shlex.quote(cmd)}"
+        p = subprocess.run(pre + [cmd], capture_output=True, text=True, timeout=limit + 15)
         line = next((x for x in p.stdout.splitlines() if x.startswith("RESULT ")), None)
         if not line:
             # the checker itself failed (import error, lost pod); never report that to the model as a kernel bug
@@ -319,16 +324,20 @@ class Run:
         if re.search(r"^\s*(import|from)\s+fla\b", path.read_text(), re.M):
             res = {"outcome": "refuse", "results": [{"name": "observed", "axis": "seed", "outcome": "refuse",
                                                      "reason": "the module imports an existing implementation"}]}
+        res["coverage"] = coverage(res["results"])
         res["blocking"] = [r["name"] for r in blocking(res["results"])]
+        if not eligible(res["results"]) and not res["blocking"]:
+            res["blocking"] = ["no accepted observed case"]
         self.log(event="eval", path=str(path), grads=grads, outcome=res["outcome"], blocking=res["blocking"],
-                 ms=res.get("ms"), results=res["results"], profile=res.get("profile"))
+                 ms=res.get("ms"), results=res["results"], profile=res.get("profile"),
+                 coverage=res["coverage"], sha256=sha256(path))
         return res
 
     def until_correct(self, path: Path, res: dict, grads: bool, repairs: int, what: str):
         for _ in range(repairs):
             if not res["blocking"]:
                 break
-            path = self.ask(f"A contract checker compiled and ran your {what} on an NVIDIA L4 against the reference "
+            path = self.ask(f"A contract checker compiled and ran your {what} on the configured GPU against the reference "
                             f"loop. It failed these cases:\n\n{report(res['results'])}\n\nDiagnose which assumption "
                             f"the failing inputs violate and fix exactly that. Return the complete fixed module.",
                             "repair_bwd" if grads else "repair")
@@ -347,7 +356,7 @@ class Run:
         for _ in range(rounds):
             p, r = best
             new = self.ask(self.anchor(p) + f"That passed the checker. It runs in {r['ms']:.2f} ms ({'forward+backward' if grads else 'forward'}, "
-                           f"B=4, H=8, T=2048, K=V=128 on the L4). "
+                           f"on the measured target workload). "
                            f"GPU profile per step:\n{profile_text(r)}\n\nOptimize for speed while keeping it correct. "
                            f"The checker bounds error relative to the output scale at 2e-2. Return the complete module.",
                            "opt_bwd" if grads else "opt")
@@ -439,7 +448,8 @@ class Run:
         if not bres["blocking"]:
             bpath, bres = self.optimize(bpath, bres, True, self.a.bwd_opt_rounds, 5.36)
         self.log(event="done", stage="backward", ok=not bres["blocking"], forward=str(path), forward_ms=res["ms"],
-                 backward=str(bpath), fwd_bwd_ms=bres.get("ms"), calls=self.n, run_usd=self.cost)
+                 backward=str(bpath), fwd_bwd_ms=bres.get("ms"), calls=self.n, run_usd=self.cost,
+                 sha256=sha256(bpath), coverage=coverage(bres["results"]))
 
 
 def main():

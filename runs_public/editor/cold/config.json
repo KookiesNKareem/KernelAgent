@@ -1,0 +1,7 @@
+{
+  "script": "research.py",
+  "script_sha256": "0a9fb89dc281a9f9884e6daa4d27edaa869b2fc9e55f1e062499a6f5b3eba80f",
+  "model": "muse-spark-1.3-contributor",
+  "model_budget_usd": 1.0,
+  "wall_minutes": 30
+}

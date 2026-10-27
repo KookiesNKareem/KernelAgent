@@ -58,7 +58,7 @@ class OpSpec:
 
 def _tensor_desc(t: torch.Tensor) -> dict:
     return {"tensor": {"shape": list(t.shape), "obs_shape": list(t.shape), "dtype": dtype_name(t.dtype),
-                       "stride": list(t.stride()), "contiguous": t.is_contiguous()}}
+                       "stride": list(t.stride()), "offset": t.storage_offset(), "contiguous": t.is_contiguous()}}
 
 
 def _flat(xs):
@@ -173,9 +173,9 @@ def materialize(spec: OpSpec, sizes: dict[str, int], seed: int, device: str,
             else:
                 x = torch.randint(0, max(2, min(shape) if shape else 2), shape, generator=g, dtype=dt)
             x = x.to(device)
-            mode = layout if layout is not None else ("observed" if not t.get("contiguous", True) else None)
+            mode = layout if layout is not None else ("observed" if not t.get("contiguous", True) or t.get("offset", 0) else None)
             exact = t.get("stride") if shape == t.get("obs_shape") else None
-            return apply_layout(x, mode, t.get("stride"), exact)
+            return apply_layout(x, mode, t.get("stride"), exact, t.get("offset", 0) if exact is not None else 0)
         if isinstance(a, dict) and "sym" in a:
             return sizes[a["sym"]]
         if isinstance(a, dict) and "seq" in a:
@@ -189,20 +189,20 @@ def materialize(spec: OpSpec, sizes: dict[str, int], seed: int, device: str,
 
 
 def apply_layout(x: torch.Tensor, mode: str | None, observed_stride: list[int] | None = None,
-                 exact_stride: list[int] | None = None) -> torch.Tensor:
+                 exact_stride: list[int] | None = None, offset: int = 0) -> torch.Tensor:
     """Same logical values, different memory layout."""
     if mode is None or x.dim() == 0:
         return x
     if mode == "contiguous":
         return x.contiguous()
     if mode == "observed":
-        if observed_stride is None or list(x.stride()) == observed_stride:
+        if observed_stride is None or (list(x.stride()) == observed_stride and offset == 0):
             return x
         if exact_stride is not None and all(st >= 0 for st in exact_stride):
             # the model's exact strides, gaps included, inside a buffer just large enough
             span = sum((n - 1) * st for n, st in zip(x.shape, exact_stride)) + 1
-            buf = torch.zeros(span, dtype=x.dtype, device=x.device)
-            view = torch.as_strided(buf, x.shape, exact_stride)
+            buf = torch.zeros(span + offset, dtype=x.dtype, device=x.device)
+            view = torch.as_strided(buf, x.shape, exact_stride, storage_offset=offset)
             view.copy_(x)
             return view
         order = sorted(range(x.dim()), key=lambda i: -observed_stride[i])

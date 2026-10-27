@@ -11,6 +11,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import hashlib
+import statistics
+from contextlib import nullcontext
 import time
 import urllib.request
 from pathlib import Path
@@ -103,9 +106,11 @@ class LM(nn.Module):
         return F.linear(self.norm(x), self.emb.weight)
 
 
-def data(device):
-    path = Path("/tmp/tinyshakespeare.txt")
+def data(device, data_path=None):
+    path = Path(data_path) if data_path else Path("/tmp/tinyshakespeare.txt")
     if not path.exists():
+        if data_path:
+            raise FileNotFoundError(path)
         urllib.request.urlretrieve(DATA_URL, path)
     return torch.tensor(list(path.read_bytes()), dtype=torch.long, device=device)
 
@@ -115,9 +120,9 @@ def layer_module(layer):
     return LAYERS[layer] if layer in LAYERS else importlib.import_module(layer)
 
 
-def make_lm(layer, fn):
+def make_lm(layer, fn, device="cuda", **kwargs):
     mod = layer_module(layer)
-    return LM(fn, channel_decay=getattr(mod, "CHANNEL_DECAY", True), n_e=getattr(mod, "E", None)).cuda()
+    return LM(fn, channel_decay=getattr(mod, "CHANNEL_DECAY", True), n_e=getattr(mod, "E", None), **kwargs).to(device)
 
 
 def mixer_fn(layer, mixer):
@@ -140,7 +145,7 @@ def batch(ids, n, seq, gen):
 
 
 def loss_of(model, x):
-    with torch.autocast("cuda", dtype=torch.bfloat16):
+    with (torch.autocast("cuda", dtype=torch.bfloat16) if x.device.type == "cuda" else nullcontext()):
         logits = model(x[:, :-1])
     return F.cross_entropy(logits.float().flatten(0, 1), x[:, 1:].flatten())
 
@@ -173,40 +178,73 @@ def main():
     ap.add_argument("--eval-every", type=int, default=25)
     ap.add_argument("--grad-check")
     ap.add_argument("--out")
+    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--val-batches", type=int, default=8)
+    ap.add_argument("--width", type=int, default=512)
+    ap.add_argument("--layers", type=int, default=4)
+    ap.add_argument("--heads", type=int, default=4)
+    ap.add_argument("--head-dim", type=int, default=128)
+    ap.add_argument("--device", choices=["cuda", "cpu"], default="cuda")
+    ap.add_argument("--data", help="Optional local dataset; its bytes are hashed in the receipt")
+    ap.add_argument("--expected-data-sha256", help="Refuse a dataset that differs from the recorded bytes")
     a = ap.parse_args()
+    if min(a.steps, a.batch, a.seq, a.val_batches, a.eval_every, a.width, a.layers, a.heads, a.head_dim) < 1:
+        ap.error("training dimensions, steps and validation counts must be positive")
     if a.grad_check:
         return grad_check(a.layer, a.grad_check, a.batch, a.seq)
-    torch.manual_seed(0)
-    model = make_lm(a.layer, mixer_fn(a.layer, a.mixer))
+    device = a.device
+    sync = torch.cuda.synchronize if device == "cuda" else lambda: None
+    torch.manual_seed(a.seed)
+    model = make_lm(a.layer, mixer_fn(a.layer, a.mixer), device=device, d=a.width, layers=a.layers,
+                    heads=a.heads, head_dim=a.head_dim)
     opt = torch.optim.AdamW(model.parameters(), lr=1e-3, weight_decay=0.0)
-    ids = data("cuda")
+    ids = data(device, a.data)
+    data_path = Path(a.data) if a.data else Path("/tmp/tinyshakespeare.txt")
+    if a.expected_data_sha256 and hashlib.sha256(data_path.read_bytes()).hexdigest() != a.expected_data_sha256:
+        raise ValueError("Dataset hash differs from the recorded experiment")
     split = int(len(ids) * 0.9)
     train, val = ids[:split], ids[split:]
-    gen = torch.Generator(device="cuda").manual_seed(1)
-    vx = batch(val, a.batch, a.seq, torch.Generator(device="cuda").manual_seed(2))
+    gen = torch.Generator(device=device).manual_seed(a.seed + 1)
+    val_gen = torch.Generator(device=device).manual_seed(a.seed + 2)
+    vx = [batch(val, a.batch, a.seq, val_gen) for _ in range(a.val_batches)]
+    from muse_kernel.identity import environment
+    data_path = Path(a.data) if a.data else Path("/tmp/tinyshakespeare.txt")
+    meta = {"config": vars(a), "environment": environment(), "dataset_sha256": hashlib.sha256(data_path.read_bytes()).hexdigest(),
+            "dataset_url": DATA_URL if not a.data else None, "validation": "mean over fixed disjoint-split batches",
+            "started": time.time()}
+    if Path(a.mixer).is_file():
+        meta["kernel_sha256"] = hashlib.sha256(Path(a.mixer).read_bytes()).hexdigest()
+    Path(a.out).parent.mkdir(parents=True, exist_ok=True)
+    Path(a.out + ".meta.json").write_text(json.dumps(meta, indent=2))
+    if device == "cuda":
+        torch.cuda.reset_peak_memory_stats()
+    training_start = time.perf_counter()
     with open(a.out, "w") as f:
         for step in range(a.steps):
             x = batch(train, a.batch, a.seq, gen)
-            torch.cuda.synchronize()
+            sync()
             t0 = time.perf_counter()
             try:
                 loss = loss_of(model, x)
                 opt.zero_grad(set_to_none=True)
                 loss.backward()
+                gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0, error_if_nonfinite=True)
+                opt.step()
+                sync()
             except torch.OutOfMemoryError:
-                rec = {"step": step, "out_of_memory": True, "gpu_gb": torch.cuda.get_device_properties(0).total_memory / 1e9}
-                f.write(json.dumps(rec) + "\n")
-                print(json.dumps(rec), flush=True)
-                return
-            gnorm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-            opt.step()
-            torch.cuda.synchronize()
-            rec = {"step": step, "loss": loss.item(), "grad_norm": gnorm.item(), "step_s": time.perf_counter() - t0,
-                   "tokens_per_s": a.batch * a.seq / (time.perf_counter() - t0)}
+                f.write(json.dumps({"step": step, "out_of_memory": True}) + "\n")
+                raise
+            dt = time.perf_counter() - t0
+            rec = {"step": step, "seed": a.seed, "loss": loss.item(), "grad_norm": gnorm.item(),
+                   "step_s": dt, "tokens_per_s": a.batch * a.seq / dt}
             if step % a.eval_every == 0 or step == a.steps - 1:
+                model.eval()
                 with torch.no_grad():
-                    rec["val_loss"] = loss_of(model, vx).item()
-                rec["peak_mem_gb"] = torch.cuda.max_memory_allocated() / 1e9
+                    vals = [loss_of(model, v).item() for v in vx]
+                model.train()
+                rec.update(val_loss=statistics.mean(vals), val_loss_std=statistics.pstdev(vals), val_batches=len(vals),
+                           peak_mem_gb=torch.cuda.max_memory_allocated()/1e9 if device == "cuda" else None)
+            rec["elapsed_s"] = time.perf_counter() - training_start
             f.write(json.dumps(rec) + "\n")
             f.flush()
             print(json.dumps(rec), flush=True)

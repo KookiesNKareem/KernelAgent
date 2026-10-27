@@ -1,0 +1,5 @@
+# Preserve the frozen corpus byte-for-byte, including original trailing spaces.
+runs_public/workbench/**/dataset.txt -whitespace
+# Captured transcripts and receipts are evidence artifacts, not authored source.
+runs_public/workbench/** linguist-generated=true
+runs_public/editor/** linguist-generated=true

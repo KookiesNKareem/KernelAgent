@@ -1,0 +1,91 @@
+{
+  "seed": 122793969,
+  "policy": "sampled after candidate selection; no repair feedback",
+  "cases": [
+    {
+      "name": "holdout_0",
+      "axis": "holdout",
+      "seed": 1239748033,
+      "layout": "contiguous",
+      "stress": "gate_typical"
+    },
+    {
+      "name": "holdout_1",
+      "axis": "holdout",
+      "seed": 428121258,
+      "layout": "strided2",
+      "stress": "gate_mid"
+    },
+    {
+      "name": "holdout_2",
+      "axis": "holdout",
+      "seed": 1916285731,
+      "layout": "strided3_off1",
+      "stress": "gate_high"
+    },
+    {
+      "name": "holdout_3",
+      "axis": "holdout",
+      "seed": 191083404,
+      "layout": "transposed",
+      "stress": "decay_strong"
+    },
+    {
+      "name": "holdout_4",
+      "axis": "holdout",
+      "seed": 1668703425,
+      "layout": "leading_swap",
+      "stress": "decay_none"
+    },
+    {
+      "name": "holdout_5",
+      "axis": "holdout",
+      "seed": 386511294,
+      "layout": "contiguous",
+      "stress": "gate_edges"
+    },
+    {
+      "name": "holdout_6",
+      "axis": "holdout",
+      "seed": 1532359753,
+      "layout": "strided2",
+      "stress": "gate_typical"
+    },
+    {
+      "name": "holdout_7",
+      "axis": "holdout",
+      "seed": 1423255413,
+      "layout": "strided3_off1",
+      "stress": "gate_mid"
+    },
+    {
+      "name": "holdout_8",
+      "axis": "holdout",
+      "seed": 1281193101,
+      "layout": "transposed",
+      "stress": "gate_high"
+    },
+    {
+      "name": "holdout_9",
+      "axis": "holdout",
+      "seed": 769642440,
+      "layout": "leading_swap",
+      "stress": "decay_strong"
+    },
+    {
+      "name": "holdout_10",
+      "axis": "holdout",
+      "seed": 120868447,
+      "layout": "contiguous",
+      "stress": "decay_none"
+    },
+    {
+      "name": "holdout_11",
+      "axis": "holdout",
+      "seed": 303742796,
+      "layout": "strided2",
+      "stress": "gate_edges"
+    }
+  ],
+  "candidate_sha256": "06831963549d01ddcb2ff8c59953c132cb5d2b212f3f74ebe9308b885e5d8ff2"
+}

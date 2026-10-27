@@ -6,7 +6,7 @@ description: Make a slow PyTorch function (typically a recurrent layer written a
 # Fast recurrence
 
 The user keeps their reference implementation. You add one decorator; a background build writes a forward and
-backward Triton kernel, checks it against the reference in float64 (41+ cases plus every gradient), and swaps
+backward Triton kernel, checks it against the reference in float64 (explicitly counted empirical cases and gradient checks), and swaps
 it in only for calls it verified. Never hand-write the kernel yourself and never weaken the checker.
 
 ## Steps
@@ -27,15 +27,17 @@ it in only for calls it verified. Never hand-write the kernel yourself and never
    contract from the real tensors (shapes, dtypes, unit-norm rows, ranges such as g <= 0 or beta in [0, 1])
    and starts a background build. Training keeps running on the reference meanwhile.
 4. Watch `.muse_kernels/<function>_<hash>/status.json` next to the source file:
-   `building` -> `ready` (kernel in use) or `failed` (reason given; training is unaffected).
+   `building` -> `ready` (kernel eligible for guarded use) or `failed` (reason given).
    `run/events.jsonl` has every attempt and the counterexamples the model was sent.
-5. When it is `ready`, report to the user: verified cases, forward+backward time vs the reference, and cost.
+5. When it is `ready`, report accepted/unsupported/skipped/failed cases, forward+backward time versus a matched reference, and model cost separately from GPU cost.
    Call `my_layer.status()` for per-call routing counts (kernel vs reference and why).
-6. Suggest committing the `.muse_kernels/` folder: later runs on any GPU machine load the verified kernel
-   instantly with no model calls. Editing the function changes its hash and triggers exactly one rebuild.
+6. A committed cache is reused only when source/dependencies, environment and kernel hashes match. A new
+   GPU/software environment requires revalidation. Recreate the decorator after source edits.
+7. For backward recovery, use `muse_kernel.train_step` with the decorated functions and a loss-only closure.
+   Fatal CUDA context failures require restarting the worker; ordinary forward fallback cannot catch a later backward error.
 
 ## Settings (environment)
 
-- `MUSE_KERNEL_MODEL` (default `muse-wonder-1.0`; `muse-spark-1.3-contributor` is far cheaper)
-- `MUSE_KERNEL_MAX_USD` per build (default 4). Spend is tallied on the machine that runs the build.
+- `MUSE_KERNEL_MODEL` (default `muse-spark-1.3-contributor,muse-wonder-1.0`)
+- `MUSE_KERNEL_MAX_USD` per model attempt (default 4). The workbench additionally enforces one shared experiment cap. Spend is tallied on the machine that runs the build.
 - `MODEL_API_KEY` must be set (Meta Model API).

@@ -1,0 +1,25 @@
+{
+ "state": "ready",
+ "started": 1793133332.8804622,
+ "updated": 1793133691.541476,
+ "reference_ms": 8.324112044647336,
+ "model": "muse-spark-1.3-contributor",
+ "attempt": 1,
+ "kernel": "kernel.py",
+ "kernel_sha256": "0ba2fdfb34bade4edbc30b65b9a491bb00ddd7a1a7f7f7036ef5a158f2cd3b38",
+ "coverage": {
+  "total": 27,
+  "accept": 27,
+  "wrong": 0,
+  "crash": 0,
+  "refuse": 0,
+  "skip": 0,
+  "unsupported": [],
+  "skipped": [],
+  "all_cases_passed": true
+ },
+ "fwd_bwd_ms": 0.3757172031328082,
+ "usd": 0.0075691000000000005,
+ "verified_cases": 27,
+ "cases": 27
+}

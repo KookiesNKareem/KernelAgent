@@ -9,7 +9,7 @@
 Training runs on the function as usual. After a few calls the decorator has seen the real shapes, dtypes and
 value ranges, and starts a background build. Once a forward+backward kernel passes the checker, calls whose
 shapes, dtypes and values match what was verified go to the kernel; everything else still runs the function.
-Builds are cached by the function's source, so editing the equation triggers a new build automatically.
+Caches bind the function, captured helpers/globals, software and hardware. Recreate the decorator after edits.
 
 Settings (environment): MUSE_KERNEL_MODEL (comma-separated models tried in order, each continuing from the last
 one's verified forward or counterexamples; default Spark 1.3 Contributor, then Wonder), MUSE_KERNEL_MAX_USD
@@ -34,9 +34,11 @@ from pathlib import Path
 
 import torch
 
+from .identity import environment, signature
+from .recovery import train_step
 from .infer import NORM_TOL, describe_domains, merge_domains, observe, source_hash, standalone_module
 
-__all__ = ["fast"]
+__all__ = ["fast", "train_step"]
 
 # the cheap model verifies as often as Wonder on our benchmark at ~1/100 the cost; Wonder takes over on failure
 DEFAULT_MODELS = "muse-spark-1.3-contributor,muse-wonder-1.0"
@@ -54,7 +56,15 @@ class Fast:
     def __init__(self, fn, observe_calls: int):
         functools.update_wrapper(self, fn)
         self.fn, self.n_observe = fn, observe_calls
-        self.hash = source_hash(fn)
+        if observe_calls < 1:
+            raise ValueError("observe_calls must be positive")
+        self.disabled = False
+        try:
+            self.hash = source_hash(fn)
+        except (OSError, ValueError, TypeError):
+            self.hash = 'unavailable'
+            self.disabled = True
+        self.environment = environment()
         self.job = cache_root(fn) / f"{fn.__name__}_{self.hash}"
         self.seen: list[dict] = []
         self.domains: dict[int, str | None] = {}
@@ -63,11 +73,14 @@ class Fast:
         self.stats = Counter()
         self.lock = threading.Lock()
         self._last_check = 0.0
-        self._load_if_ready()
+        if self.disabled:
+            self.stats['disabled: reference identity unavailable'] += 1
+        else:
+            self._load_if_ready()
 
     # ---- the guard -------------------------------------------------------------------------------
     def _signature(self, args) -> tuple:
-        return tuple((tuple(a.shape), str(a.dtype)) if isinstance(a, torch.Tensor) else a for a in args)
+        return signature(args)
 
     def _values_ok(self, args) -> bool:
         checks = []
@@ -86,6 +99,14 @@ class Fast:
         return bool(torch.stack(checks).all()) if checks else True
 
     def __call__(self, *args, **kwargs):
+        if self.disabled:
+            self.stats["reference"] += 1
+            return self.fn(*args, **kwargs)
+        try:
+            if source_hash(self.fn) != self.hash:
+                self.disable("reference dependencies changed; recreate decorator")
+        except (ValueError, OSError, TypeError):
+            self.disable("reference identity unavailable")
         self._poll()
         if self.kernel is not None and not kwargs and self._signature(args) in self.verified:
             if self._values_ok(args):
@@ -93,15 +114,19 @@ class Fast:
                     out = self.kernel(*args)
                     self.stats["kernel"] += 1
                     return out
-                except Exception as e:  # never let a kernel failure stop training
-                    self.kernel = None
-                    self.stats[f"disabled: {type(e).__name__}"] += 1
+                except Exception as e:
+                    if any(term in str(e).lower() for term in ('illegal memory access', 'device-side assert')):
+                        raise
+                    self.disable(type(e).__name__)
             else:
                 self.stats["fallback: values outside the verified range"] += 1
         elif self.kernel is not None:
             self.stats["fallback: shape or dtype not verified"] += 1
-        if self.kernel is None and not kwargs:
-            self._observe(args)
+        if self.kernel is None and not kwargs and not self.disabled:
+            try:
+                self._observe(args)
+            except Exception as error:
+                self.disable(f"build setup: {type(error).__name__}")
         self.stats["reference"] += 1
         return self.fn(*args, **kwargs)
 
@@ -111,7 +136,7 @@ class Fast:
             return
         obs = observe(args)
         self.domains = obs["domains"] if not self.seen else merge_domains(self.domains, obs["domains"])
-        self.seen.append({"args": tuple(a.detach() if isinstance(a, torch.Tensor) else a for a in args), **obs})
+        self.seen.append({"args": tuple(a.detach().requires_grad_(a.requires_grad) if isinstance(a, torch.Tensor) else a for a in args), **obs})
         if len(self.seen) == self.n_observe:
             self._start_build()
 
@@ -133,46 +158,71 @@ class Fast:
             specs.append(with_domains(spec, {i: d for i, d in self.domains.items() if d}))
         (self.job / "spec.json").write_text(json.dumps(specs[0].to_json()))
         (self.job / "extra_specs.json").write_text(json.dumps([s.to_json() for s in specs[1:]]))
-        job = {"hash": self.hash, "name": self.fn.__name__, "source": inspect.getsource(self.fn),
+        job = {"hash": self.hash, "name": self.fn.__name__, "source": standalone_module(self.fn),
                "signature": ", ".join(names), "call": describe_call(specs[0]), "sizes": specs[0].sizes,
                "grad_names": ", ".join(n for n, a in zip(names, self.seen[0]["args"])
                                        if isinstance(a, torch.Tensor) and a.is_floating_point()),
-               "domains": describe_domains(self.domains, names), "verified_signatures": [repr(s) for s in sigs],
+               "domains": describe_domains(self.domains, names), "verified_signatures": sigs, "environment": self.environment, "cache_version": 2,
                "models": os.environ.get("MUSE_KERNEL_MODEL", DEFAULT_MODELS).split(","),
-               "max_usd": float(os.environ.get("MUSE_KERNEL_MAX_USD", 4))}
+               "max_usd": float(os.environ.get("MUSE_KERNEL_MAX_USD", 4)), "require_holdout": True}
         (self.job / "job.json").write_text(json.dumps(job, indent=1))
         (self.job / "status.json").write_text(json.dumps({"state": "queued", "updated": time.time()}))
+        if os.environ.get("MUSE_KERNEL_EXTERNAL_BUILDER") == "1":
+            print(f"[muse_kernel] queued {self.job}", flush=True)
+            return
         with open(self.job / "builder.log", "w") as log:
             subprocess.Popen([sys.executable, "-m", "muse_kernel.build", str(self.job)], stdout=log,
                              stderr=subprocess.STDOUT, start_new_session=True, cwd=Path(__file__).resolve().parents[1])
         print(f"[muse_kernel] {self.fn.__name__}: building a kernel in the background ({self.job})", flush=True)
 
     def _poll(self):
-        if self.kernel is not None or time.time() - self._last_check < 5:
+        if self.disabled or time.time() - self._last_check < 5:
             return
         self._last_check = time.time()
-        self._load_if_ready()
+        if source_hash(self.fn) != self.hash:
+            self.disable("reference dependencies changed; redecorate to build a new cache")
+            return
+        if self.kernel is None:
+            self._load_if_ready()
 
     def _load_if_ready(self):
         st = self.job / "status.json"
         if not st.exists():
             return
-        s = json.loads(st.read_text())
+        try:
+            s = json.loads(st.read_text())
+        except (OSError, ValueError):
+            return
         if s.get("state") != "ready":
             return
-        job = json.loads((self.job / "job.json").read_text())
+        try:
+            job = json.loads((self.job / "job.json").read_text())
+            from kernel_contract.evidence import sha256
+            kernel_path = self.job / Path(s["kernel"]).name
+            if s.get("kernel_sha256") != sha256(kernel_path):
+                self.stats["cache hash mismatch"] += 1
+                return
+        except (OSError, ValueError, KeyError, TypeError):
+            self.stats["incomplete cache"] += 1
+            return
+        if job.get("require_holdout") and not s.get("holdout_passed"):
+            self.stats["cache missing fresh checks"] += 1
+            return
+        if job.get("cache_version") != 2 or job.get("environment") != self.environment:
+            self.stats["cache requires revalidation on this environment"] += 1
+            return
         try:  # the cache may be committed and loaded on a machine without a GPU or Triton
             spec_mod = importlib.util.spec_from_file_location(f"muse_kernel_{self.hash}",
                                                               self.job / Path(s["kernel"]).name)
             mod = importlib.util.module_from_spec(spec_mod)
             spec_mod.loader.exec_module(mod)
-            self.kernel = mod.kernel_function
+            kernel = mod.kernel_function
+            verified = job["verified_signatures"]
+            domains = {int(i): d for i, d in json.loads((self.job / "domains.json").read_text()).items()} if (self.job / "domains.json").exists() else self._domains_from_spec()
         except Exception as e:
             self.stats[f"cached kernel unavailable: {type(e).__name__}"] += 1
             return
-        self.verified = [eval(x, {"torch": torch}) for x in job["verified_signatures"]]
-        self.domains = {int(i): d for i, d in json.loads((self.job / "domains.json").read_text()).items()} \
-            if (self.job / "domains.json").exists() else self._domains_from_spec()
+        self.kernel, self.verified, self.domains = kernel, verified, domains
         print(f"[muse_kernel] {self.fn.__name__}: verified kernel in use "
               f"({s.get('verified_cases')}/{s.get('cases')} cases, {s.get('fwd_bwd_ms', 0):.1f} ms fwd+bwd "
               f"vs {s.get('reference_ms', 0):.0f} ms reference forward, ${s.get('usd', 0):.2f})", flush=True)
@@ -180,6 +230,11 @@ class Fast:
     def _domains_from_spec(self) -> dict[int, str | None]:
         spec = json.loads((self.job / "spec.json").read_text())
         return {i: a["tensor"].get("domain") for i, a in enumerate(spec["args"]) if isinstance(a, dict) and "tensor" in a}
+
+    def disable(self, reason="disabled by caller"):
+        self.disabled = True
+        self.kernel = None
+        self.stats[f"disabled: {reason}"] += 1
 
     def status(self) -> dict:
         st = self.job / "status.json"

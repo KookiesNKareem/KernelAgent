@@ -1,0 +1,18 @@
+{
+  "cache_version": 2,
+  "python": "3.12.3",
+  "torch": "2.8.0+cu128",
+  "triton": "3.4.0",
+  "cuda": "12.8",
+  "platform": "Linux",
+  "gpu": [
+    {
+      "name": "NVIDIA L4",
+      "capability": [
+        8,
+        9
+      ],
+      "memory": 23661248512
+    }
+  ]
+}

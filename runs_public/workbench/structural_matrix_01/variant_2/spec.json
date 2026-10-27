@@ -1,0 +1,207 @@
+{
+  "op": "muse_jobs.j_8e8635463a38ec88e3c25816.reference",
+  "args": [
+    {
+      "tensor": {
+        "shape": [
+          2,
+          2,
+          {
+            "sym": "s0"
+          },
+          {
+            "sym": "s1"
+          }
+        ],
+        "obs_shape": [
+          2,
+          2,
+          64,
+          16
+        ],
+        "dtype": "bfloat16",
+        "stride": [
+          2048,
+          1024,
+          16,
+          1
+        ],
+        "contiguous": true
+      }
+    },
+    {
+      "tensor": {
+        "shape": [
+          2,
+          2,
+          {
+            "sym": "s0"
+          },
+          {
+            "sym": "s1"
+          }
+        ],
+        "obs_shape": [
+          2,
+          2,
+          64,
+          16
+        ],
+        "dtype": "bfloat16",
+        "stride": [
+          2048,
+          1024,
+          16,
+          1
+        ],
+        "contiguous": true,
+        "domain": "l2row"
+      }
+    },
+    {
+      "tensor": {
+        "shape": [
+          2,
+          2,
+          {
+            "sym": "s0"
+          },
+          {
+            "sym": "s1"
+          }
+        ],
+        "obs_shape": [
+          2,
+          2,
+          64,
+          16
+        ],
+        "dtype": "bfloat16",
+        "stride": [
+          2048,
+          1024,
+          16,
+          1
+        ],
+        "contiguous": true
+      }
+    },
+    {
+      "tensor": {
+        "shape": [
+          2,
+          2,
+          {
+            "sym": "s0"
+          },
+          {
+            "sym": "s1"
+          }
+        ],
+        "obs_shape": [
+          2,
+          2,
+          64,
+          16
+        ],
+        "dtype": "bfloat16",
+        "stride": [
+          2048,
+          1024,
+          16,
+          1
+        ],
+        "contiguous": true,
+        "domain": "l2row"
+      }
+    },
+    {
+      "tensor": {
+        "shape": [
+          2,
+          2,
+          {
+            "sym": "s0"
+          },
+          {
+            "sym": "s1"
+          }
+        ],
+        "obs_shape": [
+          2,
+          2,
+          64,
+          16
+        ],
+        "dtype": "float32",
+        "stride": [
+          2048,
+          1024,
+          16,
+          1
+        ],
+        "contiguous": true,
+        "domain": "logdecay"
+      }
+    },
+    {
+      "tensor": {
+        "shape": [
+          2,
+          2,
+          {
+            "sym": "s0"
+          }
+        ],
+        "obs_shape": [
+          2,
+          2,
+          64
+        ],
+        "dtype": "float32",
+        "stride": [
+          128,
+          64,
+          1
+        ],
+        "contiguous": true,
+        "domain": "unit"
+      }
+    },
+    {
+      "tensor": {
+        "shape": [
+          2,
+          2,
+          {
+            "sym": "s0"
+          }
+        ],
+        "obs_shape": [
+          2,
+          2,
+          64
+        ],
+        "dtype": "float32",
+        "stride": [
+          128,
+          64,
+          1
+        ],
+        "contiguous": true,
+        "domain": "unit"
+      }
+    },
+    0.25
+  ],
+  "kwargs": {},
+  "sizes": {
+    "s0": 64,
+    "s1": 16
+  },
+  "name": "reference",
+  "flags": {
+    "any_float_output": true,
+    "normwise_rtol": 0.02
+  }
+}

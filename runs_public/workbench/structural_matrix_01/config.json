@@ -1,0 +1,47 @@
+{
+  "model_budget_usd": 3,
+  "wall_minutes": 65,
+  "models": [
+    "muse-spark-1.3-contributor"
+  ],
+  "steps": 100,
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "val_batches": 8,
+  "batch": 2,
+  "seq": 64,
+  "heads": 2,
+  "head_dim": 16,
+  "width": 64,
+  "layers": 1,
+  "target_loss": 2.5,
+  "gpu_hourly_usd": 0.59,
+  "direct_control": false,
+  "variants": [
+    {
+      "name": "Erase then write",
+      "source": "import torch\nCHANNEL_DECAY = True\n\ndef reference(q, k, v, e, g, beta, gamma, scale):\n    B, H, T, K = q.shape\n    V = v.shape[-1]\n    q, k, v, e, g, beta, gamma = (x.to(torch.promote_types(x.dtype, torch.float32)) for x in (q, k, v, e, g, beta, gamma))\n    S = q.new_zeros(B, H, K, V)\n    outs = []\n    for t in range(T):\n        kt, vt, et, bt = (k[:, :, t], v[:, :, t], e[:, :, t], beta[:, :, t])\n        ct = gamma[:, :, t]\n        S = S * g[:, :, t].exp()[..., None]\n        S = S - ct[..., None, None] * et[..., None] * (S * et[..., None]).sum(-2)[..., None, :]\n        pred = (S * kt[..., None]).sum(-2)\n        S = S + (bt[..., None] * (vt - pred))[..., None, :] * kt[..., None]\n        outs.append((S * (q[:, :, t] * scale)[..., None]).sum(-2))\n    return torch.stack(outs, dim=2)\n",
+      "hash": "7ccb685993cf2333a0b3df9d",
+      "equation": " S_t = (I - beta_t k_t k_t^T)(I - gamma_t e_t e_t^T) diag(exp g_t) S_{t-1} + beta_t k_t v_t^T",
+      "description": "Erase key-addressed memory before the delta write."
+    },
+    {
+      "name": "Write then erase",
+      "source": "import torch\nCHANNEL_DECAY = True\n\ndef reference(q, k, v, e, g, beta, gamma, scale):\n    B, H, T, K = q.shape\n    V = v.shape[-1]\n    q, k, v, e, g, beta, gamma = (x.to(torch.promote_types(x.dtype, torch.float32)) for x in (q, k, v, e, g, beta, gamma))\n    S = q.new_zeros(B, H, K, V)\n    outs = []\n    for t in range(T):\n        kt, vt, et, bt = (k[:, :, t], v[:, :, t], e[:, :, t], beta[:, :, t])\n        ct = gamma[:, :, t]\n        S = S * g[:, :, t].exp()[..., None]\n        pred = (S * kt[..., None]).sum(-2)\n        S = S + (bt[..., None] * (vt - pred))[..., None, :] * kt[..., None]\n        S = S - ct[..., None, None] * et[..., None] * (S * et[..., None]).sum(-2)[..., None, :]\n        outs.append((S * (q[:, :, t] * scale)[..., None]).sum(-2))\n    return torch.stack(outs, dim=2)\n",
+      "hash": "8e8635463a38ec88e3c25816",
+      "equation": " S_t = (I - gamma_t e_t e_t^T)[(I - beta_t k_t k_t^T) diag(exp g_t) S_{t-1} + beta_t k_t v_t^T]",
+      "description": "Reverse the noncommuting operations; the new write is erased too."
+    },
+    {
+      "name": "Value-side erase",
+      "source": "import torch\nCHANNEL_DECAY = True\n\ndef reference(q, k, v, e, g, beta, gamma, scale):\n    B, H, T, K = q.shape\n    V = v.shape[-1]\n    q, k, v, e, g, beta, gamma = (x.to(torch.promote_types(x.dtype, torch.float32)) for x in (q, k, v, e, g, beta, gamma))\n    S = q.new_zeros(B, H, K, V)\n    outs = []\n    for t in range(T):\n        kt, vt, et, bt = (k[:, :, t], v[:, :, t], e[:, :, t], beta[:, :, t])\n        ct = gamma[:, :, t]\n        S = S * g[:, :, t].exp()[..., None]\n        S = S - ct[..., None, None] * (S * et[..., None, :]).sum(-1)[..., None] * et[..., None, :]\n        pred = (S * kt[..., None]).sum(-2)\n        S = S + (bt[..., None] * (vt - pred))[..., None, :] * kt[..., None]\n        outs.append((S * (q[:, :, t] * scale)[..., None]).sum(-2))\n    return torch.stack(outs, dim=2)\n",
+      "hash": "3dda0927faa19793194b9968",
+      "equation": " S_t = (I - beta_t k_t k_t^T) diag(exp g_t) S_{t-1} (I - gamma_t e_t e_t^T) + beta_t k_t v_t^T (value-side erase)",
+      "description": "Erase in value space rather than key space; the state is transformed on both sides."
+    }
+  ],
+  "schema_version": 1
+}

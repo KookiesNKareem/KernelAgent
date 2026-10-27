@@ -80,7 +80,7 @@
   </section>
 
   <section id="stats">
-    <p class="label">Run</p>
+    <p class="label" id="run-mode">Run</p>
     <div class="stat"><div class="v" id="s-attempts">0</div><div class="k">kernels checked</div></div>
     <div class="stat"><div class="v" id="s-time">0:00</div><div class="k">elapsed</div></div>
     <div class="stat"><div class="v" id="s-cost">$0.00</div><div class="k">model cost</div></div>
@@ -175,8 +175,8 @@ function verdict(ev) {
   const passed = ev.results.filter(r => r[1] === "accept").length;
   addRow(`kernel <b>${n}</b>${ev.grads ? " + grads" : ""}`, ev.results, `${passed}/${ev.results.length}`, ok);
   showFailures(ev.failures);
-  if (ok && ev.ms) { $("s-ms").textContent = ev.ms.toFixed(1); }
-  $("state").textContent = ok ? "verified: matches the reference on every case" : `${ev.failures.length} counterexamples, model is repairing`;
+  if (ok && ev.ms && ev.grads) { $("s-ms").textContent = ev.ms.toFixed(1); }
+  $("state").textContent = ok ? `accepted scope: ${passed}/${ev.results.length} cases passed; ${ev.results.filter(r => r[1] === "refuse").length} unsupported; ${ev.results.filter(r => r[1] === "skip").length} skipped` : `${ev.failures.length} counterexamples, model is repairing`;
   $("state").style.color = ok ? "var(--glass)" : "var(--coral)";
 }
 
@@ -238,6 +238,16 @@ function handle(ev) {
     $("s-time").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
   }
   switch (ev.event) {
+    case "run_metadata":
+      $("run-mode").textContent = ev.mode === "recorded" ? "Recorded run · accelerated replay" : "Live event stream";
+      break;
+    case "done":
+      if (ev.ok && ev.backward) {
+        $("s-ms").textContent = ev.fwd_bwd_ms.toFixed(1);
+        $("state").textContent = "selected kernel: " + ev.backward.split("/").pop();
+        $("state").style.color = "var(--glass)";
+      }
+      break;
     case "layer": {
       $("layer-name").textContent = ev.name;
       const lines = ev.doc.split("\n").map(l => l.trim()).filter(l => /=/.test(l));

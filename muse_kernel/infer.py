@@ -44,26 +44,40 @@ def observe(args: tuple) -> dict:
 
 
 def source_hash(fn) -> str:
-    return hashlib.sha256(inspect.getsource(fn).encode()).hexdigest()[:16]
+    return hashlib.sha256(standalone_module(fn).encode()).hexdigest()[:24]
 
 
 def standalone_module(fn) -> str:
-    """The function's own source, without decorators, plus its module's top-level imports."""
-    mod = inspect.getmodule(fn)
-    imports = []
-    if mod is not None:
-        try:
-            tree = ast.parse(inspect.getsource(mod))
-            imports = [ast.get_source_segment(inspect.getsource(mod), n) for n in tree.body
-                       if isinstance(n, (ast.Import, ast.ImportFrom)) and "muse_kernel" not in ast.dump(n)]
-        except (OSError, TypeError):
-            pass
-    src = textwrap.dedent(inspect.getsource(fn))
-    fn_tree = ast.parse(src).body[0]
-    lines = src.splitlines()
-    body = "\n".join(lines[fn_tree.lineno - 1:] if not fn_tree.decorator_list else lines[fn_tree.decorator_list[-1].end_lineno:])
-    head = "\n".join(i for i in imports if i and "__future__" not in i)
-    return f"from __future__ import annotations\n\nimport torch\n{head}\n\n\n{body}\n"
+    """Capture referenced helpers and immutable globals, or reject an unsupported closure explicitly."""
+    import json
+    import types
+    chunks, imports, seen = [], set(), set()
+
+    def visit(f, name):
+        if name in seen:
+            return
+        seen.add(name)
+        cv = inspect.getclosurevars(f)
+        for key, value in {**cv.globals, **cv.nonlocals}.items():
+            if isinstance(value, types.ModuleType):
+                imports.add(f"import {value.__name__} as {key}")
+            elif inspect.isfunction(value) and value.__module__ == f.__module__:
+                visit(value, key)
+            elif inspect.isfunction(value) or inspect.isclass(value) or inspect.isbuiltin(value):
+                if '<locals>' in value.__qualname__:
+                    raise ValueError(f"Cannot capture local dependency {key}")
+                imports.add(f"from {value.__module__} import {value.__name__} as {key}")
+            elif isinstance(value, (str, int, float, bool, tuple, list, dict, type(None))):
+                json.dumps(value, allow_nan=False)
+                chunks.append(f"{key} = {value!r}")
+            else:
+                raise ValueError(f"Unsupported captured dependency: {key} ({type(value).__name__})")
+        node = ast.parse(textwrap.dedent(inspect.getsource(f))).body[0]
+        node.decorator_list = []
+        node.name = name
+        chunks.append(ast.unparse(node))
+    visit(fn, fn.__name__)
+    return "from __future__ import annotations\n" + "\n".join(sorted(imports)) + "\n\n" + "\n\n".join(chunks) + "\n"
 
 
 def describe_domains(domains: dict[int, str | None], names: list[str]) -> list[str]:

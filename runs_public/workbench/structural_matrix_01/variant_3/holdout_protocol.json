@@ -1,0 +1,91 @@
+{
+  "seed": 1799010496,
+  "policy": "sampled after candidate selection; no repair feedback",
+  "cases": [
+    {
+      "name": "holdout_0",
+      "axis": "holdout",
+      "seed": 1117842493,
+      "layout": "contiguous",
+      "stress": "gate_typical"
+    },
+    {
+      "name": "holdout_1",
+      "axis": "holdout",
+      "seed": 1170294549,
+      "layout": "strided2",
+      "stress": "gate_mid"
+    },
+    {
+      "name": "holdout_2",
+      "axis": "holdout",
+      "seed": 2089896950,
+      "layout": "strided3_off1",
+      "stress": "gate_high"
+    },
+    {
+      "name": "holdout_3",
+      "axis": "holdout",
+      "seed": 2057654500,
+      "layout": "transposed",
+      "stress": "decay_strong"
+    },
+    {
+      "name": "holdout_4",
+      "axis": "holdout",
+      "seed": 1572567544,
+      "layout": "leading_swap",
+      "stress": "decay_none"
+    },
+    {
+      "name": "holdout_5",
+      "axis": "holdout",
+      "seed": 1969934011,
+      "layout": "contiguous",
+      "stress": "gate_edges"
+    },
+    {
+      "name": "holdout_6",
+      "axis": "holdout",
+      "seed": 582768178,
+      "layout": "strided2",
+      "stress": "gate_typical"
+    },
+    {
+      "name": "holdout_7",
+      "axis": "holdout",
+      "seed": 841850318,
+      "layout": "strided3_off1",
+      "stress": "gate_mid"
+    },
+    {
+      "name": "holdout_8",
+      "axis": "holdout",
+      "seed": 914301574,
+      "layout": "transposed",
+      "stress": "gate_high"
+    },
+    {
+      "name": "holdout_9",
+      "axis": "holdout",
+      "seed": 1242406836,
+      "layout": "leading_swap",
+      "stress": "decay_strong"
+    },
+    {
+      "name": "holdout_10",
+      "axis": "holdout",
+      "seed": 699040993,
+      "layout": "contiguous",
+      "stress": "decay_none"
+    },
+    {
+      "name": "holdout_11",
+      "axis": "holdout",
+      "seed": 1495172286,
+      "layout": "strided2",
+      "stress": "gate_edges"
+    }
+  ],
+  "candidate_sha256": "0ba2fdfb34bade4edbc30b65b9a491bb00ddd7a1a7f7f7036ef5a158f2cd3b38"
+}

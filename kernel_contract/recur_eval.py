@@ -45,12 +45,14 @@ def profile(kern, grads: bool, inputs) -> list[dict]:
 
 
 def main(path: str, grads: bool, layer: str = "gdr"):
+    grad_shapes = {}
     if layer in LAYERS:
         make_spec, inputs = LAYERS[layer]
     else:  # a module path such as kernel_contract.layers.my_edit, defining reference, inputs and spec
         import importlib
         mod = importlib.import_module(layer)
         make_spec, inputs = mod.spec, mod.inputs
+        grad_shapes = getattr(mod, "GRAD_WORKLOADS", {})  # a larger state may need a smaller fp64 truth
     spec = make_spec()
     spec.flags["check_grads"] = grads
     cases = build_cases(spec)
@@ -63,6 +65,8 @@ def main(path: str, grads: bool, layer: str = "gdr"):
         if grads and wname == "timed":
             # fp64 autograd through 2048 reference steps at B=4, H=8 needs ~50 GB; keep T, shrink B and H
             wname, shape = "timed_b1h2", dict(B=1, H=2, T=2048)
+        if grads:
+            shape = grad_shapes.get(wname, shape)
         ws = make_spec(**shape)
         ws.flags["check_grads"] = grads
         seeds = [c for c in build_cases(ws) if c["name"] in ("observed", "seed1", "gate_typical")]

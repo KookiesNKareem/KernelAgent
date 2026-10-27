@@ -132,8 +132,8 @@ def module_layer(path: str) -> dict:
     mod = importlib.import_module(path)
     eq = " ".join(l.strip() for l in (mod.__doc__ or "").splitlines()[1:] if l.strip())
     return dict(signature=", ".join(inspect.signature(mod.reference).parameters),
-                dtypes="q, k, v, e arrive as bf16, g, beta and gamma as fp32", eager_ms=None,
-                math=f"{eq}. Inputs the equation does not use are still passed", reference=inspect.getsource(mod.reference).rstrip())
+                dtypes=getattr(mod, "DTYPES", "q, k, v, e arrive as bf16, g, beta and gamma as fp32"), eager_ms=None,
+                math=f"{eq.rstrip('.')}. Inputs the equation does not use are still passed", reference=inspect.getsource(mod.reference).rstrip())
 
 
 def write_prompt(L: dict) -> str:

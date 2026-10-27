@@ -13,6 +13,9 @@ import torch
 import torch.nn.functional as F
 
 E = 4
+# fp64 autograd truth at the default train shape (B=8, H=4, T=512) needs 16 GiB with a 512-row state
+DTYPES = "q, k, v, q2, k2 arrive as bf16, g and beta as fp32"
+GRAD_WORKLOADS = {"train": dict(B=4, H=4, T=512)}
 
 
 def reference(q, k, v, q2, k2, g, beta, scale):

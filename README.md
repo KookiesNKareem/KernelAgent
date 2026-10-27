@@ -10,6 +10,8 @@ layer, so most equation edits are never trained at scale. This project hands a M
 the slow loop and gets back a chunked Triton forward **and backward** that a training run can use, checked
 by an independent contract the model does not control.
 
+![Training with Triadic Gated DeltaNet: the Muse Wonder kernel matches the reference loop step for step and trains 15x faster](assets/triadic_training.png)
+
 - **Writer:** Muse Wonder or Muse Spark 1.3 Contributor (Meta Model API), or Muse Spark Open (open weights,
   via Baseten).
 - **Prompt:** only the equation, the reference loop, the target GPU, "match the reference on any inputs it
@@ -83,10 +85,11 @@ All three pass the full suite, gradients included. The released kernels are
 | Mixer | Step time | Peak memory | Val loss after 300 steps |
 |---|---|---|---|
 | Slow reference loop | out of memory on the 22 GB L4 | | |
-| Same loop with gradient checkpointing | 2571 ms | 9.5 GB | |
-| Muse Wonder kernel | 165 ms | 1.2 GB | 1.744 |
+| Same loop with gradient checkpointing | 2460 ms | 9.5 GB | 1.739 |
+| Muse Wonder kernel | 164 ms | 1.2 GB | 1.744 |
 
-The kernel trains 15.6x faster than the checkpointed loop with an eighth of the memory. At a size where the
+The kernel trains 15x faster than the checkpointed loop with an eighth of the memory, and both reach
+the same validation loss. At a size where the
 plain loop fits (batch 2 x 256), the two match from the same init and batches: every parameter gradient
 agrees within 1.3% on step one (median 0.6%), validation loss is 2.536 vs 2.535 at step 25 and 2.136 vs 2.158
 at step 150, and the kernel step takes 28.8 ms against 690 ms. Logs are in `runs_public/train_triadic/`.

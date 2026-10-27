@@ -183,8 +183,9 @@ class Run:
         self.out.mkdir(parents=True, exist_ok=True)
         self.provider = get_model_provider(a.model)
         self.messages: list[dict] = []
-        self.start_usd = spent()
+        self.start_usd = spent(self.provider.ledger)
         self.n = 0
+        self.last_path: Path | None = None
 
     def log(self, **e):
         e["t"] = time.time()
@@ -193,7 +194,7 @@ class Run:
         print(json.dumps({k: v for k, v in e.items() if k not in ("results", "profile")}, default=str), flush=True)
 
     def ask(self, text: str, tag: str) -> Path:
-        if spent() - self.start_usd + self.a.max_tokens * 20 / 1e6 > self.a.max_usd:
+        if spent(self.provider.ledger) - self.start_usd + self.a.max_tokens * 20 / 1e6 > self.a.max_usd:
             raise SystemExit(f"run budget ${self.a.max_usd} reached")
         self.messages.append({"role": "user", "content": text})
         self.log(event="llm_start", tag=tag, prompt=text)
@@ -208,8 +209,9 @@ class Run:
         except ValueError:
             path.write_text("def kernel_function(*a, **k):\n    raise RuntimeError('model returned no code')\n")
         (self.out / f"{self.n:02d}_{tag}.md").write_text(resp.content)
+        self.last_path = path
         self.log(event="llm_done", tag=tag, path=str(path), seconds=time.time() - t0, usage=resp.usage,
-                 run_usd=spent() - self.start_usd)
+                 run_usd=spent(self.provider.ledger) - self.start_usd)
         return path
 
     def evaluate(self, path: Path, grads: bool) -> dict:
@@ -241,11 +243,18 @@ class Run:
             res = self.evaluate(path, grads)
         return path, res
 
+    def anchor(self, path: Path) -> str:
+        """The source to continue from, when it is not the model's latest answer."""
+        if path == self.last_path:
+            return ""
+        return (f"Your most recent version was rejected or slower. Continue from this one, which passed:\n\n"
+                f"```python\n{path.read_text()}\n```\n\n")
+
     def optimize(self, path: Path, res: dict, grads: bool, rounds: int, expert_ms: float):
         best = (path, res)
         for _ in range(rounds):
             p, r = best
-            new = self.ask(f"That passed the checker. It runs in {r['ms']:.2f} ms ({'forward+backward' if grads else 'forward'}, "
+            new = self.ask(self.anchor(p) + f"That passed the checker. It runs in {r['ms']:.2f} ms ({'forward+backward' if grads else 'forward'}, "
                            f"B=4, H=8, T=2048, K=V=128 on the L4). "
                            f"GPU profile per step:\n{profile_text(r)}\n\nOptimize for speed while keeping it correct. "
                            f"The checker bounds error relative to the output scale at 2e-2. Return the complete module.",
@@ -280,19 +289,19 @@ class Run:
         res = self.evaluate(path, False)
         path, res = self.until_correct(path, res, False, self.a.repairs, "kernel")
         if res["blocking"]:
-            return self.log(event="done", stage="forward", ok=False, run_usd=spent() - self.start_usd)
+            return self.log(event="done", stage="forward", ok=False, run_usd=spent(self.provider.ledger) - self.start_usd)
         path, res = self.optimize(path, res, False, self.a.opt_rounds, 1.54)
         self.log(event="forward_final", path=str(path), ms=res["ms"])
         self.backward(L, path, res)
 
     def backward(self, L, path, res):
-        bpath = self.ask(backward_prompt(L), "bwd")
+        bpath = self.ask(self.anchor(path) + backward_prompt(L), "bwd")
         bres = self.evaluate(bpath, True)
         bpath, bres = self.until_correct(bpath, bres, True, self.a.repairs, "backward")
         if not bres["blocking"]:
             bpath, bres = self.optimize(bpath, bres, True, self.a.bwd_opt_rounds, 5.36)
         self.log(event="done", stage="backward", ok=not bres["blocking"], forward=str(path), forward_ms=res["ms"],
-                 backward=str(bpath), fwd_bwd_ms=bres.get("ms"), calls=self.n, run_usd=spent() - self.start_usd)
+                 backward=str(bpath), fwd_bwd_ms=bres.get("ms"), calls=self.n, run_usd=spent(self.provider.ledger) - self.start_usd)
 
 
 def main():

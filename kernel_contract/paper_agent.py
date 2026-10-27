@@ -284,16 +284,17 @@ class Run:
         t0 = time.time()
         resp = self.provider.get_response(self.a.model, self.messages, max_tokens=self.a.max_tokens,
                                           reasoning_effort=self.a.effort)
-        self.messages.append({"role": "assistant", "content": resp.content})
+        content = resp.content or ""  # an answer spent entirely on reasoning counts as returning no code
+        self.messages.append({"role": "assistant", "content": content})
         call_usd = usage_cost(self.a.model, resp.usage)
         self.cost += call_usd
         self.n += 1
         path = self.out / f"{self.n:02d}_{tag}.py"
         try:
-            path.write_text(extract_code(resp.content))
+            path.write_text(extract_code(content))
         except ValueError:
             path.write_text("def kernel_function(*a, **k):\n    raise RuntimeError('model returned no code')\n")
-        (self.out / f"{self.n:02d}_{tag}.md").write_text(resp.content)
+        (self.out / f"{self.n:02d}_{tag}.md").write_text(content)
         self.last_path = path
         self.log(event="llm_done", tag=tag, path=str(path), seconds=time.time() - t0, usage=resp.usage, usd=call_usd,
                  run_usd=self.cost)

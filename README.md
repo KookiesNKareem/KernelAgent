@@ -111,11 +111,7 @@ Every layer gets a verified kernel from at least one model, and every layer exce
 verified backward. The expert kernels are still 2 to 3 times faster on the two most-tuned layers
 (b01, b02).
 
-Two harness bugs were found and fixed during the run. The checker crashed when the reference ignores an input
-(b01 and b02 take `e` and `gamma` unused); every b01/b02 backward was re-judged with the fix at no model cost
-(`rescore_*.jsonl`), and Wonder's b01 cost includes about $2 of repairs against the broken checker. An empty
-model reply crashed the loop; Spark Open's b10 run was repeated (the crashed run is kept). Regenerate the
-table with `python -m kernel_contract.bench_report runs_public/bench1 runs_public/bench1/bench_baselines.json`.
+Regenerate the table with `python -m kernel_contract.bench_report runs_public/bench1 runs_public/bench1/bench_baselines.json`.
 
 ## One decorator: `@muse_kernel.fast`
 

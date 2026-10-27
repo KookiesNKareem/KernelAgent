@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shlex
 import subprocess
 import time
@@ -39,11 +40,8 @@ REFERENCE = '''def reference(q, k, v, g, beta, scale):
         outs.append((S * (q[:, :, t] * scale)[..., None]).sum(-2))
     return torch.stack(outs, dim=2)                            # [B, H, T, V], float32'''
 
-WRITE = f"""You are writing a GPU kernel. Do not copy from flash-linear-attention or any existing implementation
-of this layer; derive the algorithm yourself.
-
-A research paper introduces this recurrent sequence layer (the "gated delta rule"). Its reference
-implementation is a Python loop over time:
+WRITE = f"""A research paper introduces this recurrent sequence layer. Its reference implementation is a Python loop
+over time:
 
 ```python
 {REFERENCE}
@@ -52,37 +50,24 @@ implementation is a Python loop over time:
 In matrix form, with state S of shape [K, V]: S_t = exp(g_t) * (I - beta_t k_t k_t^T) S_{{t-1}} + beta_t k_t v_t^T,
 and o_t = scale * S_t^T q_t.
 
-This loop is far too slow (361 ms forward at B=4, H=8, T=2048, K=V=128 on an NVIDIA L4). Write a fast
-**chunked** forward implementation in Triton: split time into chunks of size C (e.g. 64), compute
-intra-chunk interactions with dense matrix products (tl.dot), and carry the state S across chunks. The core
-difficulty is the delta rule's (I - beta k k^T) products inside a chunk; a standard approach is the WY / UT
-transform representation, solving a small lower-triangular system per chunk, but derive whatever chunked
-algorithm you can prove correct. Fold the gating (cumulative log-decay within a chunk) in correctly.
+The loop takes 361 ms forward at B=4, H=8, T=2048, K=V=128 on an NVIDIA L4, too slow to train with. Write a
+fast Triton implementation for the L4 (Ada, sm_89, Triton 3.5).
 
 Requirements:
-- Define `def kernel_function(q, k, v, g, beta, scale):` with exactly the reference's argument order, shapes
-  and semantics, returning a [B, H, T, V] tensor (float32 or q's dtype).
-- Heavy computation must be in @triton.jit kernels (tl.dot for the matmuls). The Python wrapper may only
-  allocate, reshape, compute launch grids and launch, plus cheap elementwise prep (e.g. a cumulative sum of g).
-- q, k, v are bf16 and g, beta fp32; accumulate in fp32. Handle T not divisible by the chunk size and
-  arbitrary input strides (pass strides to the kernel; do not assume contiguity).
-- Target: NVIDIA L4 (Ada, sm_89, about 99 KB shared memory per block), Triton 3.5. K and V may be constexpr
-  block dims (support K, V in {{64, 128}}).
+- Define `def kernel_function(q, k, v, g, beta, scale):` with the reference's argument order, shapes and
+  semantics, returning a [B, H, T, V] tensor (float32 or q's dtype). q, k, v arrive as bf16, g and beta as fp32.
+- It must match the reference on any inputs the reference accepts.
+- The computation must happen in your own @triton.jit kernels; the Python wrapper may only allocate, reshape,
+  launch and do cheap elementwise prep. Do not import or copy any existing implementation of this layer.
 
-You cannot run anything. Return the complete module in one ```python block, then 2-4 sentences on the
-algorithm and anything you are unsure about."""
+You cannot run anything. Return the complete module in one ```python block, then 2-4 sentences on your
+approach and anything you are unsure about."""
 
-BACKWARD = """Next: training support. Write a new self-contained module whose kernel_function(q, k, v, g, beta, scale)
+BACKWARD = """Next, make it trainable. Write a new self-contained module whose kernel_function(q, k, v, g, beta, scale)
 returns the output through a torch.autograd.Function, so that out.backward(grad) yields correct gradients for
-q, k, v, g and beta (return each gradient in its input's dtype). The forward can reuse your kernels (copy them
-in), saving whatever the backward needs or recomputing it. The backward must also be chunked Triton kernels:
-derive the gradients of your chunked formulation (the WY/UT representation, the per-chunk triangular inverse,
-the inter-chunk state recurrence running backwards over chunks, the cumulative log-decay). Python may only
-allocate, launch, and do cheap elementwise or reduction glue (e.g. a reverse cumulative sum for dg).
-
-The checker compares every gradient against float64 autograd of the reference loop, with the error bound
-relative to each gradient's scale (2e-2). Same constraints as before. You cannot run anything. Return the
-complete module in one ```python block, then 3-5 sentences on the backward algorithm."""
+q, k, v, g and beta, each in its input's dtype. The backward must also run in your own Triton kernels; Python
+may only allocate, launch, and do cheap elementwise or reduction glue. You cannot run anything. Return the
+complete module in one ```python block, then 3-5 sentences on your approach."""
 
 
 def describe(name: str) -> str:
@@ -164,6 +149,9 @@ class Run:
         line = next((x for x in p.stdout.splitlines() if x.startswith("RESULT ")), None)
         res = json.loads(line[7:]) if line else {"outcome": "crash", "results": [
             {"name": "observed", "axis": "seed", "outcome": "crash", "reason": (p.stderr or p.stdout)[-600:]}]}
+        if re.search(r"^\s*(import|from)\s+fla\b", path.read_text(), re.M):
+            res = {"outcome": "refuse", "results": [{"name": "observed", "axis": "seed", "outcome": "refuse",
+                                                     "reason": "the module imports an existing implementation"}]}
         res["blocking"] = [r["name"] for r in blocking(res["results"])]
         self.log(event="eval", path=str(path), grads=grads, outcome=res["outcome"], blocking=res["blocking"],
                  ms=res.get("ms"), results=res["results"], profile=res.get("profile"))
@@ -185,10 +173,9 @@ class Run:
         for _ in range(rounds):
             p, r = best
             new = self.ask(f"That passed the checker. It runs in {r['ms']:.2f} ms ({'forward+backward' if grads else 'forward'}, "
-                           f"B=4, H=8, T=2048, K=V=128 on the L4); a hand-tuned expert kernel takes {expert_ms} ms. "
+                           f"B=4, H=8, T=2048, K=V=128 on the L4). "
                            f"GPU profile per step:\n{profile_text(r)}\n\nOptimize for speed while keeping it correct. "
-                           f"The checker bounds error relative to the output scale at 2e-2, so reduced-precision dot "
-                           f"products with fp32 accumulation are acceptable. Return the complete module.",
+                           f"The checker bounds error relative to the output scale at 2e-2. Return the complete module.",
                            "opt_bwd" if grads else "opt")
             nres = self.evaluate(new, grads)
             new, nres = self.until_correct(new, nres, grads, 1, "optimized kernel")

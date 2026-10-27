@@ -90,10 +90,17 @@ def _chunk_kernel(
         )
         log_mid = 0.5 * G_last
         dg = G_m - log_mid[None, :]
-        need_seq = tl.max(tl.abs(dg)) > 40.0
+        # FIX (compound): a partial tail chunk must also take the exact
+        # sequential path. With T=257 the last chunk has a single active
+        # step, so its *cumulative* decay stays below the 40.0 threshold
+        # even though that step's own decay is as strong as -25; the
+        # scaled chunkwise form is then used in exactly the regime the
+        # threshold was meant to exclude.
+        need_seq = (tl.max(tl.abs(dg)) > 40.0) | ((start + BC) > T)
 
         if need_seq:
-            # Strong-decay chunk: plain recurrence (only exp(g_t) <= 1).
+            # Strong-decay (or partial) chunk: plain recurrence, which only
+            # ever evaluates exp(g_t) <= 1.
             for i in range(BC):
                 t = start + i
                 if t < T:
@@ -319,10 +326,9 @@ def _backward_kernel(
     ).to(tl.float32)
 
     # Adjoint dL/dS_t for the [K, BV] state block, carried backwards
-    # chunk by chunk.  Unlike the previous version, a normal chunk is
-    # differentiated with transposed tensor-core matmuls; only a chunk
-    # whose cumulative decay would overflow the scaled coordinates
-    # falls back to a per-step adjoint (using the scratch buffer).
+    # chunk by chunk. Normal chunks use transposed tensor-core matmuls;
+    # strong-decay (and partial tail) chunks use the exact per-step
+    # adjoint staged through the scratch buffer.
     Adj = tl.zeros((BK, BV), dtype=tl.float32)
 
     for crev in range(NC):
@@ -365,7 +371,11 @@ def _backward_kernel(
         )
         log_mid = 0.5 * G_last
         dg_m = G_m - log_mid[None, :]
-        need_seq = tl.max(tl.abs(dg_m)) > 40.0
+        # FIX (compound): same partial-tail rule as the forward. A tail
+        # chunk whose cumulative decay is small only because few steps
+        # remain must not use the scaled chunkwise adjoint when the
+        # individual steps are strongly decaying.
+        need_seq = (tl.max(tl.abs(dg_m)) > 40.0) | ((start + BC) > T)
 
         if need_seq:
             # ---- per-step adjoint for this chunk ---------------------
@@ -650,12 +660,21 @@ def _run_backward(q, k, v, e, g, beta, gamma, go, bnd, scale):
         return dq, dk, dv, de, dg, db, dgm
 
     BK = max(16, triton.next_power_of_2(max(1, K)))
+    # FIX (s2=129): the backward tiling previously assumed BK <= 128.
+    # K=129 pads to BK=256, and with BV=32 plus default software
+    # pipelining the dot tiles needed 134144 bytes of shared memory,
+    # above the L4's 101376-byte limit. Halve the V tile and use a
+    # single pipeline stage for wide-K launches; the benchmarked
+    # BK=128 configuration is unchanged.
     if BK <= 128:
         BV = 64
+        bwd_stages = 3
     elif BK <= 256:
-        BV = 32
+        BV = 16
+        bwd_stages = 1
     else:
         BV = 16
+        bwd_stages = 1
     BV = min(BV, max(16, triton.next_power_of_2(V)))
     NV = (V + BV - 1) // BV
     NC = bnd.shape[2]
@@ -679,6 +698,7 @@ def _run_backward(q, k, v, e, g, beta, gamma, go, bnd, scale):
         H, T, K, V, NC, NV, float(scale),
         BC=BC, BM=BM, BK=BK, BV=BV,
         num_warps=8,
+        num_stages=bwd_stages,
     )
     return dq, dk, dv, de, dg, db, dgm
 

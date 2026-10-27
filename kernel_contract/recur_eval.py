@@ -60,7 +60,7 @@ def main(path: str, grads: bool, layer: str = "gdr"):
             wname, shape = "timed_b1h2", dict(B=1, H=2, T=2048)
         ws = make_spec(**shape)
         ws.flags["check_grads"] = grads
-        seeds = [c for c in build_cases(ws) if c["name"] in ("observed", "seed1")]
+        seeds = [c for c in build_cases(ws) if c["name"] in ("observed", "seed1", "gate_typical")]
         for r in run_contract(ws, Path(path), timeout=900, cases=seeds).results:
             results.append({**r, "name": f"{wname}/{r['name']}", "axis": "workload"})
     worst = max(results, key=lambda r: {"wrong": 3, "crash": 2, "refuse": 1}.get(r["outcome"], 0))["outcome"]

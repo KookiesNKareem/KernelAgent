@@ -33,6 +33,9 @@ CASE_TEXT = {
     "decay_none": "every log-decay input is exactly 0 (no decay: the state accumulates over the whole sequence)",
     "decay_strong": "every log-decay input is between -25 and -5 (the state is almost erased every step)",
     "gate_edges": "every gate input is within 1e-4 of 0 or of 1",
+    "gate_typical": "gates drawn as sigmoid(uniform(0,1)), about 0.5 to 0.73, and slow decay log(sigmoid(N(3,1)))",
+    "gate_high": "every gate input is between 0.9 and 0.99",
+    "gate_mid": "every gate input is between 0.3 and 0.95",
 }
 
 

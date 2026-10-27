@@ -117,10 +117,19 @@ def draw_domain(dom: str, shape: list[int], g: torch.Generator, stress: str | No
             return torch.zeros(shape)
         if stress == "decay_strong":
             return -20 * u - 5
+        if stress == "gate_typical":  # slow decay, as in the timing and training inputs
+            return torch.nn.functional.logsigmoid(torch.randn(shape, generator=g) + 3)
         return torch.nn.functional.logsigmoid(torch.randn(shape, generator=g))
     if dom == "unit":  # a gate in (0, 1)
         if stress == "gate_edges":
             return torch.where(u > 0.5, 1 - 1e-4 * u, 1e-4 * u)
+        # kernels may branch on the gate range, so every range a real input can occupy gets its own case
+        if stress == "gate_typical":
+            return u.sigmoid()
+        if stress == "gate_high":
+            return 0.9 + 0.09 * u
+        if stress == "gate_mid":
+            return 0.3 + 0.65 * u
         return u.clamp(1e-3, 1 - 1e-3)
     if dom == "l2row":  # rows of unit L2 norm along the last dim
         return torch.nn.functional.normalize(torch.randn(shape, generator=g), dim=-1)

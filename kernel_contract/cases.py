@@ -34,7 +34,8 @@ def build_cases(spec: OpSpec, contract: str = "strided") -> list[dict]:
     if "logdecay" in domains:
         cases += [{"name": n, "axis": "values", "seed": 0, "stress": n} for n in ("decay_none", "decay_strong")]
     if "unit" in domains:
-        cases.append({"name": "gate_edges", "axis": "values", "seed": 0, "stress": "gate_edges"})
+        cases += [{"name": n, "axis": "values", "seed": 0, "stress": n}
+                  for n in ("gate_edges", "gate_typical", "gate_high", "gate_mid")]
     if contract == "strided":
         cases += [{"name": lay, "axis": "layout", "seed": 0, "layout": lay} for lay in LAYOUTS]
     return cases

@@ -18,8 +18,8 @@ from .runner import run_contract
 from .spec import capture, with_domains
 
 
-def gdr_spec(B=2, H=4, T=512, D=128):
-    q, k, v, g, beta = inputs(B=B, H=H, T=T, D=D)
+def gdr_spec(B=2, H=4, T=512, D=128, Dv=None):
+    q, k, v, g, beta = inputs(B=B, H=H, T=T, D=D, Dv=Dv)
     spec = capture("kernel_contract.recur_bench.reference", (q, k, v, g, beta, D ** -0.5), name="gated_delta_rule")
     spec.flags["any_float_output"] = True
     spec.flags["normwise_rtol"] = 2e-2

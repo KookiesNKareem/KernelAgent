@@ -35,11 +35,11 @@ def reference(q, k, v, e, g, beta, gamma, scale):
     return torch.stack(outs, dim=2)
 
 
-def inputs(B=4, H=8, T=1024, D=128, device="cuda", dtype=torch.bfloat16, grad=False):
+def inputs(B=4, H=8, T=1024, D=128, device="cuda", dtype=torch.bfloat16, grad=False, Dv=None):
     torch.manual_seed(0)
     q = torch.randn(B, H, T, D, device=device, dtype=dtype)
     k = F.normalize(torch.randn(B, H, T, D, device=device), dim=-1).to(dtype)
-    v = torch.randn(B, H, T, D, device=device, dtype=dtype)
+    v = torch.randn(B, H, T, Dv or D, device=device, dtype=dtype)
     e = F.normalize(torch.randn(B, H, T, D, device=device), dim=-1).to(dtype)
     g = F.logsigmoid(torch.randn(B, H, T, device=device))
     beta = torch.rand(B, H, T, device=device).sigmoid()
@@ -51,9 +51,9 @@ def inputs(B=4, H=8, T=1024, D=128, device="cuda", dtype=torch.bfloat16, grad=Fa
     return xs
 
 
-def spec(B=2, H=4, T=512, D=128):
+def spec(B=2, H=4, T=512, D=128, Dv=None):
     from .spec import capture, with_domains
-    q, k, v, e, g, beta, gamma = inputs(B=B, H=H, T=T, D=D)
+    q, k, v, e, g, beta, gamma = inputs(B=B, H=H, T=T, D=D, Dv=Dv)
     s = capture("kernel_contract.recur_eda.reference", (q, k, v, e, g, beta, gamma, D ** -0.5), name="eda")
     s.flags["any_float_output"] = True
     s.flags["normwise_rtol"] = 2e-2

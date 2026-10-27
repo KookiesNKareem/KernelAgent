@@ -15,7 +15,12 @@ from .model import load_kernel
 from . import recur_bench, recur_eda, recur_wek
 from .recur_bench import timeit
 from .recur_check import gdr_spec
+from .cases import build_cases
 from .runner import run_contract
+
+# Shapes the kernel is timed and trained at, plus K != V and B=1 with a ragged T; seed cases only.
+WORKLOADS = {"timed": dict(B=4, H=8, T=2048), "train": dict(B=8, H=4, T=512),
+             "b1_tail": dict(B=1, H=4, T=300), "k_ne_v": dict(B=2, H=4, T=256, D=128, Dv=64)}
 
 LAYERS = {"gdr": (gdr_spec, recur_bench.inputs), "eda": (recur_eda.spec, recur_eda.inputs),
           "wek": (recur_wek.spec, recur_wek.inputs)}
@@ -42,10 +47,22 @@ def main(path: str, grads: bool, layer: str = "gdr"):
     make_spec, inputs = LAYERS[layer]
     spec = make_spec()
     spec.flags["check_grads"] = grads
-    v = run_contract(spec, Path(path), timeout=900)
-    out = {"outcome": v.outcome, "results": v.results}
-    if all(r["outcome"] not in ("wrong", "crash") for r in v.results) and \
-            any(r["name"] == "observed" and r["outcome"] == "accept" for r in v.results):
+    cases = build_cases(spec)
+    t_sym = next(k for k, val in spec.sizes.items() if val == 512)
+    cases.append({"name": "compound", "axis": "values", "seed": 3, "sizes": {t_sym: 257},
+                  "layout": "transposed", "stress": "decay_strong"})
+    v = run_contract(spec, Path(path), timeout=900, cases=cases)
+    results = list(v.results)
+    for wname, shape in WORKLOADS.items():
+        ws = make_spec(**shape)
+        ws.flags["check_grads"] = grads
+        seeds = [c for c in build_cases(ws) if c["name"] in ("observed", "seed1")]
+        for r in run_contract(ws, Path(path), timeout=900, cases=seeds).results:
+            results.append({**r, "name": f"{wname}/{r['name']}", "axis": "workload"})
+    worst = max(results, key=lambda r: {"wrong": 3, "crash": 2, "refuse": 1}.get(r["outcome"], 0))["outcome"]
+    out = {"outcome": worst if worst in ("wrong", "crash", "refuse") else "accept", "results": results}
+    if all(r["outcome"] not in ("wrong", "crash") for r in results) and \
+            any(r["name"] == "observed" and r["outcome"] == "accept" for r in results):
         kern = load_kernel(Path(path))
         if grads:
             x = inputs(B=4, H=8, T=2048, D=128, grad=True)

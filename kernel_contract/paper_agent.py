@@ -133,7 +133,16 @@ may only allocate, launch, and do cheap elementwise or reduction glue. You canno
 complete module in one ```python block, then 3-5 sentences on your approach."""
 
 
+WORKLOAD_TEXT = {"timed": "B=4, H=8, T=2048, K=V=128", "train": "B=8, H=4, T=512, K=V=128",
+                 "b1_tail": "B=1, H=4, T=300, K=V=128", "k_ne_v": "B=2, H=4, T=256, K=128, V=64"}
+
+
 def describe(name: str) -> str:
+    if "/" in name:
+        w, case = name.split("/", 1)
+        return f"a fresh random draw at {WORKLOAD_TEXT.get(w, w)}"
+    if name == "compound":
+        return "T=257, every tensor stored transposed, and log-decay between -25 and -5, all at once"
     if name in CASE_TEXT:
         return CASE_TEXT[name]
     if "=" in name:

@@ -31,11 +31,11 @@ def reference(q, k, v, g, beta, scale):
     return torch.stack(outs, dim=2)
 
 
-def inputs(B=4, H=8, T=1024, D=128, device="cuda", dtype=torch.bfloat16, grad=False):
+def inputs(B=4, H=8, T=1024, D=128, device="cuda", dtype=torch.bfloat16, grad=False, Dv=None):
     torch.manual_seed(0)
     q = torch.randn(B, H, T, D, device=device, dtype=dtype)
     k = F.normalize(torch.randn(B, H, T, D, device=device, dtype=torch.float32), dim=-1).to(dtype)
-    v = torch.randn(B, H, T, D, device=device, dtype=dtype)
+    v = torch.randn(B, H, T, Dv or D, device=device, dtype=dtype)
     g = F.logsigmoid(torch.randn(B, H, T, device=device, dtype=torch.float32))
     beta = torch.rand(B, H, T, device=device, dtype=torch.float32).sigmoid()
     xs = [q, k, v, g, beta]

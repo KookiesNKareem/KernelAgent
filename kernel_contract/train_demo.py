@@ -95,6 +95,8 @@ def mixer_fn(layer, mixer):
         return mod.reference
     if mixer == "reduction":
         return mod.fla_reduction
+    if mixer == "compiled":
+        return torch.compile(mod.reference)
     return load_kernel(Path(mixer))
 
 

@@ -37,9 +37,11 @@ EDA forward 83 ms after 43 minutes.
 | Mixer | Step time | Final val loss | Peak memory |
 |---|---|---|---|
 | Slow reference loop | 2585 ms | 1.662 | 14.1 GB |
+| Same loop under `torch.compile` (warm; first step took 38 min to compile) | 383 ms | (30 steps run) | |
 | Muse Wonder kernel | 52.6 ms | 1.661 | 1.3 GB |
 | KDA interleave (expert route) | 46.6 ms | 1.664 | 1.3 GB |
 
+Wonder's kernel is 49x faster per step than the eager loop and 7.3x faster than the warm compiled loop.
 The kernel's loss tracks the reference within 0.005 over the first 10 steps (0.038 max over 300, the same
 as the expert route), and every parameter gradient matches the reference to within 0.9% on step one.
 

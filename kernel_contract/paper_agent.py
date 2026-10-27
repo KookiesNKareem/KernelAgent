@@ -121,7 +121,7 @@ class Run:
         print(json.dumps({k: v for k, v in e.items() if k not in ("results", "profile")}, default=str), flush=True)
 
     def ask(self, text: str, tag: str) -> Path:
-        if spent() - self.start_usd >= self.a.max_usd:
+        if spent() - self.start_usd + 32000 * 20 / 1e6 > self.a.max_usd:
             raise SystemExit(f"run budget ${self.a.max_usd} reached")
         self.messages.append({"role": "user", "content": text})
         self.log(event="llm_start", tag=tag, prompt=text)

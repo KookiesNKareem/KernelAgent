@@ -94,8 +94,12 @@ class MetaProvider(_MuseProvider):
         self.budget = float(os.environ.get("META_BUDGET_USD", 120))
 
     def get_response(self, model_name: str, messages: list[dict[str, str]], **kwargs) -> LLMResponse:
-        if spent() >= self.budget:
-            raise BudgetExceeded(f"Meta spend ${spent():.2f} reached budget ${self.budget:.2f}")
+        # reserve the worst case (prompt at ~3 chars/token, full max_tokens) so no call can cross the cap
+        price_in, _, price_out = next(p for k, p in META_PRICES.items() if model_name.startswith(k))
+        prompt_chars = sum(len(m.get("content") or "") for m in messages)
+        worst = (prompt_chars / 3 * price_in + kwargs.get("max_tokens", 16000) * price_out) / 1e6
+        if spent() + worst > self.budget:
+            raise BudgetExceeded(f"Meta spend ${spent():.2f} + worst case ${worst:.2f} exceeds budget ${self.budget:.2f}")
         resp = super().get_response(model_name, messages, **kwargs)
         _record(model_name, resp.usage)
         return resp

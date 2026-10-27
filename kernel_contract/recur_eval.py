@@ -67,14 +67,20 @@ def main(path: str, grads: bool, layer: str = "gdr"):
     out = {"outcome": worst if worst in ("wrong", "crash", "refuse") else "accept", "results": results}
     if all(r["outcome"] not in ("wrong", "crash") for r in results) and \
             any(r["name"] == "observed" and r["outcome"] == "accept" for r in results):
-        kern = load_kernel(Path(path))
-        if grads:
-            x = inputs(B=4, H=8, T=2048, D=128, grad=True)
-            out["ms"] = timeit(lambda: kern(*x, SCALE).float().sum().backward(), reps=10)
-        else:
-            x = inputs(B=4, H=8, T=2048, D=128)
-            out["ms"] = timeit(lambda: kern(*x, SCALE), reps=20)
-        out["profile"] = profile(kern, grads, inputs)
+        try:
+            kern = load_kernel(Path(path))
+            if grads:
+                x = inputs(B=4, H=8, T=2048, D=128, grad=True)
+                out["ms"] = timeit(lambda: kern(*x, SCALE).float().sum().backward(), reps=10)
+            else:
+                x = inputs(B=4, H=8, T=2048, D=128)
+                out["ms"] = timeit(lambda: kern(*x, SCALE), reps=20)
+            out["profile"] = profile(kern, grads, inputs)
+        except Exception as e:
+            # a kernel that passes the suite but cannot run the timed shape is a real failure, not a checker crash
+            out["results"].append({"name": "timed/benchmark", "axis": "workload", "outcome": "refuse",
+                                   "reason": f"{type(e).__name__}: {e}"[:300]})
+            out["outcome"] = "refuse"
     print("RESULT " + json.dumps(out, default=str), flush=True)
 
 

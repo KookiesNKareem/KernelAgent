@@ -94,7 +94,7 @@ def check_recurrence(layer: str, kernel_path: str, grads: bool = False) -> str:
     verdict = {"sha256": digest, "verified": not block, "blocking": [r["name"] for r in block], "failures": fails,
                "passed": sum(r["outcome"] == "accept" for r in res["results"]), "cases": len(res["results"]),
                "ms": res.get("ms"), "profile": res.get("profile")}
-    emit(event="check_done", layer=layer, **verdict)
+    emit(event="check_done", layer=layer, results=[[r["name"], r["outcome"]] for r in res["results"]], **verdict)
     return json.dumps(verdict, indent=1)
 
 

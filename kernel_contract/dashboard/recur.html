@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Change the equation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&family=STIX+Two+Text:ital,wght@1,400;1,500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ink: #0f1a24;
+    --slate: #16263a;
+    --rule: #233a52;
+    --chalk: #e9eef2;
+    --graphite: #8a9baa;
+    --coral: #f07a5f;
+    --glass: #79d2b5;
+    --amber: #e9b44c;
+    --pending: #2b4560;
+    --mono: "IBM Plex Mono", ui-monospace, monospace;
+    --sans: "IBM Plex Sans", system-ui, sans-serif;
+    --math: "STIX Two Text", Georgia, serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ink); color: var(--chalk); font: 400 17px/1.45 var(--sans); }
+  main { max-width: 1840px; margin: 0 auto; padding: 22px 40px 24px; display: grid; gap: 18px;
+         grid-template-columns: minmax(0, 1fr) 420px; grid-template-areas: "eq stats" "grid fails" "train train"; }
+  section { background: var(--slate); border: 1px solid var(--rule); border-radius: 10px; padding: 16px 22px; min-width: 0; }
+  .label { font: 500 12px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--graphite); margin: 0 0 14px; }
+  #eq { grid-area: eq; }
+  #eq .name { font: 600 15px var(--mono); color: var(--graphite); margin-bottom: 10px; }
+  #eq .formula { font: italic 400 28px/1.3 var(--math); color: var(--chalk); white-space: pre-wrap; }
+  #stats { grid-area: stats; display: grid; grid-template-columns: 1fr 1fr; gap: 16px 20px; align-content: start; }
+  #stats .label { grid-column: 1 / -1; margin-bottom: 0; }
+  .stat .v { font: 500 34px/1.1 var(--mono); }
+  .stat .k { font: 400 13px var(--sans); color: var(--graphite); }
+  #state { grid-column: 1 / -1; font: 600 15px var(--mono); padding: 10px 12px; border-radius: 6px; background: var(--ink); }
+  #grid { grid-area: grid; overflow-x: auto; }
+  .row { display: grid; grid-template-columns: 150px 1fr 120px; align-items: center; gap: 14px; margin-bottom: 6px; }
+  .row .who { font: 500 14px var(--mono); color: var(--graphite); }
+  .row .who b { color: var(--chalk); font-weight: 600; }
+  .cells { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(8px, 1fr); gap: 3px; height: 22px; }
+  .cell { border-radius: 3px; background: var(--pending); }
+  .row.fresh .cells { animation: land .5s ease-out; }
+  @keyframes land { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: none; } }
+  .cell.accept { background: var(--glass); }
+  .cell.wrong, .cell.crash { background: var(--coral); }
+  .cell.refuse { background: repeating-linear-gradient(135deg, var(--coral) 0 4px, var(--slate) 4px 7px); }
+  .row .res { font: 500 14px var(--mono); text-align: right; }
+  .row.verified .res { color: var(--glass); }
+  .axis { display: grid; grid-template-columns: 150px 1fr 120px; gap: 14px; font: 400 12px var(--mono); color: var(--graphite); margin-top: 6px; }
+  .legend { display: flex; gap: 18px; margin-top: 14px; font: 400 13px var(--sans); color: var(--graphite); }
+  .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  #fails { grid-area: fails; }
+  #fails ol { margin: 0; padding-left: 0; list-style: none; display: grid; gap: 12px; }
+  #fails li { border-left: 3px solid var(--coral); padding: 2px 0 2px 12px; }
+  #fails li .c { font: 600 14px var(--mono); }
+  #fails li .m { font: 400 14px var(--sans); color: var(--graphite); }
+  #fails li .d { font: 400 13px var(--mono); color: var(--chalk); opacity: .85; margin-top: 2px; word-break: break-word; }
+  #fails .empty { color: var(--graphite); font-size: 15px; }
+  #train { grid-area: train; display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 28px; }
+  svg text { font: 400 13px var(--mono); fill: var(--graphite); }
+  #chart { overflow: visible; display: block; }
+  .bars .bar { height: 26px; border-radius: 4px; margin: 6px 0 16px; }
+  .bars .bl { font: 500 14px var(--mono); display: flex; justify-content: space-between; }
+  .speedup { font: 500 40px/1 var(--mono); color: var(--glass); margin-top: 8px; }
+  @media (max-width: 1100px) {
+    main { grid-template-columns: 1fr; grid-template-areas: "eq" "stats" "grid" "fails" "train"; padding: 16px; }
+    #train { grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) { .row.fresh .cells { animation: none; } }
+</style>
+</head>
+<body>
+<main>
+  <section id="eq">
+    <p class="label">The edited layer</p>
+    <div class="name" id="layer-name">waiting for the run</div>
+    <div class="formula" id="formula"></div>
+  </section>
+
+  <section id="stats">
+    <p class="label">Run</p>
+    <div class="stat"><div class="v" id="s-attempts">0</div><div class="k">kernels checked</div></div>
+    <div class="stat"><div class="v" id="s-time">0:00</div><div class="k">elapsed</div></div>
+    <div class="stat"><div class="v" id="s-cost">$0.00</div><div class="k">model cost</div></div>
+    <div class="stat"><div class="v" id="s-ms">–</div><div class="k">verified fwd+bwd, ms</div></div>
+    <div id="state">no kernel yet</div>
+  </section>
+
+  <section id="grid">
+    <p class="label">Contract checks, one row per kernel the model wrote</p>
+    <div id="rows"></div>
+    <div class="axis"><span></span><span id="axis-cases"></span><span></span></div>
+    <div class="legend">
+      <span><i style="background:var(--glass)"></i>matches the float64 reference</span>
+      <span><i style="background:var(--coral)"></i>wrong values or crash</span>
+      <span><i style="background:repeating-linear-gradient(135deg,var(--coral) 0 4px,var(--slate) 4px 7px)"></i>refused the input</span>
+    </div>
+  </section>
+
+  <section id="fails">
+    <p class="label">Counterexamples sent back to the model</p>
+    <ol id="fail-list"><li class="empty" style="border:0;padding:0">None yet.</li></ol>
+  </section>
+
+  <section id="train">
+    <div>
+      <p class="label">Training loss, same init and batches</p>
+      <svg id="chart" width="100%" height="250" role="img" aria-label="Training loss: reference loop and kernel"></svg>
+    </div>
+    <div class="bars">
+      <p class="label">Time per training step</p>
+      <div class="bl"><span>reference loop</span><span id="b-ref">–</span></div>
+      <div class="bar" id="bar-ref" style="background:var(--amber);width:0"></div>
+      <div class="bl"><span>model's kernel</span><span id="b-ker">–</span></div>
+      <div class="bar" id="bar-ker" style="background:var(--glass);width:0"></div>
+      <div class="speedup" id="speedup"></div>
+    </div>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const st = { t0: null, cases: [], rows: [], cost: 0, base: null, kernel: null };
+
+function renderRows() {
+  $("axis-cases").textContent = `${st.cases.length} cases: seeds, value ranges, sizes, layouts, gates, workload shapes`;
+  $("rows").innerHTML = "";
+  st.rows.forEach((r, i) => {
+    const row = document.createElement("div");
+    row.className = "row" + (r.verified ? " verified" : "") + (i === st.rows.length - 1 ? " fresh" : "");
+    row.innerHTML = `<div class="who">${r.label}</div><div class="cells"></div><div class="res"></div>`;
+    const cells = row.querySelector(".cells");
+    st.cases.forEach(name => {
+      const c = document.createElement("div");
+      c.className = "cell " + (r.by[name] || "pending");
+      c.title = name;
+      cells.appendChild(c);
+    });
+    row.querySelector(".res").textContent = r.text;
+    $("rows").appendChild(row);
+  });
+}
+
+function addRow(label, results, verdictText, verified) {
+  results.forEach(([name]) => { if (!st.cases.includes(name)) st.cases.push(name); });
+  st.rows.push({ label, by: Object.fromEntries(results), text: verdictText, verified });
+  renderRows();
+}
+
+function showFailures(fails) {
+  const ol = $("fail-list");
+  ol.innerHTML = "";
+  if (!fails.length) { ol.innerHTML = '<li class="empty" style="border:0;padding:0">None. Every case matches the reference.</li>'; return; }
+  fails.slice(0, 5).forEach(f => {
+    const li = document.createElement("li");
+    li.innerHTML = `<div class="c"></div><div class="m"></div><div class="d"></div>`;
+    li.querySelector(".c").textContent = f.case;
+    li.querySelector(".m").textContent = f.means || "";
+    li.querySelector(".d").textContent = (f.detail || "").slice(0, 160);
+    ol.appendChild(li);
+  });
+  if (fails.length > 5) {
+    const li = document.createElement("li");
+    li.className = "empty"; li.style.border = "0"; li.style.padding = "0";
+    li.textContent = `and ${fails.length - 5} more`;
+    ol.appendChild(li);
+  }
+}
+
+function verdict(ev) {
+  const n = st.rows.length + 1;
+  $("s-attempts").textContent = n;
+  const ok = ev.verified;
+  const passed = ev.results.filter(r => r[1] === "accept").length;
+  addRow(`kernel <b>${n}</b>${ev.grads ? " + grads" : ""}`, ev.results, `${passed}/${ev.results.length}`, ok);
+  showFailures(ev.failures);
+  if (ok && ev.ms) { $("s-ms").textContent = ev.ms.toFixed(1); }
+  $("state").textContent = ok ? "verified: matches the reference on every case" : `${ev.failures.length} counterexamples, model is repairing`;
+  $("state").style.color = ok ? "var(--glass)" : "var(--coral)";
+}
+
+function pretty(s) {
+  const sub = { t: "ₜ", "t-1": "ₜ₋₁", e: "ₑ" };
+  return s
+    .replace(/\bbeta/g, "β").replace(/\bgamma/g, "γ").replace(/\balpha/g, "α").replace(/\bkappa/g, "κ")
+    .replace(/_\{t-1\}/g, "ₜ₋₁").replace(/_t\b/g, "ₜ").replace(/\^T/g, "ᵀ").replace(/\^K/g, "ᴷ")
+    .replace(/ in R/g, " ∈ ℝ").replace(/<=/g, "≤").replace(/\(x\)/g, "⊗").replace(/ \* /g, " · ");
+}
+
+function line(points, color, w, dash) {
+  return `<polyline fill="none" stroke="${color}" stroke-width="${w}" ${dash ? 'stroke-dasharray="6 5"' : ""} points="${points}"/>`;
+}
+
+function drawChart() {
+  const b = st.base, k = st.kernel;
+  if (!b && !k) return;
+  const series = [];
+  if (b) series.push({ ys: b.loss, xs: b.loss.map((_, i) => i), color: "var(--amber)", name: "reference loop", w: 2.5 });
+  if (k) series.push({ ys: k.ys, xs: k.xs, color: "var(--glass)", name: "model's kernel", w: 2.5, dash: true });
+  const W = $("chart").clientWidth || 1000, Hh = 250;
+  $("chart").setAttribute("viewBox", `0 0 ${W} ${Hh}`);
+  const xmax = Math.max(...series.map(s => s.xs[s.xs.length - 1]));
+  const all = series.flatMap(s => s.ys);
+  const ymin = Math.min(...all), ymax = Math.max(...all);
+  const X = x => 60 + (W - 80) * x / xmax, Y = y => 14 + (Hh - 50) * (ymax - y) / (ymax - ymin || 1);
+  let svg = "";
+  for (let i = 0; i <= 4; i++) {
+    const y = ymin + (ymax - ymin) * i / 4;
+    svg += `<line x1="60" x2="${W - 20}" y1="${Y(y)}" y2="${Y(y)}" stroke="var(--rule)" stroke-width="1"/>`;
+    svg += `<text x="50" y="${Y(y) + 4}" text-anchor="end">${y.toFixed(1)}</text>`;
+  }
+  svg += `<text x="${W / 2}" y="${Hh - 6}" text-anchor="middle">training step</text>`;
+  series.forEach(s => {
+    svg += line(s.xs.map((x, i) => `${X(x).toFixed(1)},${Y(s.ys[i]).toFixed(1)}`).join(" "), s.color, s.w, s.dash);
+    const lx = s.xs[s.xs.length - 1], ly = s.ys[s.ys.length - 1];
+    svg += `<text x="${X(lx) - 6}" y="${Y(ly) - 14 - (s.dash ? 20 : 0)}" text-anchor="end" style="fill:${s.color}">${s.name}</text>`;
+  });
+  $("chart").innerHTML = svg;
+}
+
+function drawBars() {
+  const r = st.base && st.base.median_step_ms, k = st.kernel && st.kernel.step_ms;
+  if (r) $("b-ref").textContent = `${r.toFixed(0)} ms`;
+  if (k) $("b-ker").textContent = `${k.toFixed(1)} ms`;
+  const m = Math.max(r || 0, k || 0);
+  if (r) $("bar-ref").style.width = `${100 * r / m}%`;
+  if (k) $("bar-ker").style.width = `${Math.max(1.5, 100 * k / m)}%`;
+  if (r && k) $("speedup").textContent = `${(r / k).toFixed(0)}× faster`;
+}
+
+function handle(ev) {
+  if (ev.t && !st.t0) st.t0 = ev.t;
+  if (ev.t && st.t0) {
+    const s = Math.round(ev.t - st.t0);
+    $("s-time").textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  }
+  switch (ev.event) {
+    case "layer": {
+      $("layer-name").textContent = ev.name;
+      const lines = ev.doc.split("\n").map(l => l.trim()).filter(l => /=/.test(l));
+      $("formula").textContent = pretty(lines.join("\n"));
+      break;
+    }
+    case "baseline":
+      st.base = ev; drawChart(); drawBars(); break;
+    case "llm_done":
+      if (ev.run_usd != null) { st.cost = ev.run_usd; $("s-cost").textContent = `$${st.cost.toFixed(2)}`; }
+      break;
+    case "check_start":
+      $("state").textContent = "checking against the float64 reference on the GPU";
+      $("state").style.color = "var(--chalk)";
+      break;
+    case "check_done":
+      verdict({ ...ev, grads: true });
+      break;
+    case "eval": {  // paper agent events
+      const results = ev.results.map(r => [r.name, r.outcome]);
+      const failures = ev.results.filter(r => !["accept", "skip"].includes(r.outcome))
+        .map(r => ({ case: r.name, detail: r.reason || `error ${(r.err || 0).toPrecision(3)}` }));
+      verdict({ results, failures, verified: !ev.blocking.length, ms: ev.ms, grads: ev.grads });
+      break;
+    }
+    case "train_start":
+      $("state").textContent = "training the language model with the verified kernel";
+      $("state").style.color = "var(--chalk)";
+      break;
+    case "train_done": {
+      const stride = ev.loss_curve.length >= ev.steps ? 1 : Math.max(1, Math.floor(ev.steps / 20));
+      st.kernel = { ys: ev.loss_curve, xs: ev.loss_curve.map((_, i) => i * stride), step_ms: ev.median_step_ms };
+      drawChart(); drawBars();
+      $("state").textContent = `trained ${ev.steps} steps, final val loss ${ev.final_val_loss.toFixed(3)}`;
+      $("state").style.color = "var(--glass)";
+      break;
+    }
+  }
+}
+
+const src = new EventSource("/events");
+src.onmessage = m => { try { handle(JSON.parse(m.data)); } catch (e) { console.error(e); } };
+</script>
+</body>
+</html>
